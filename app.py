@@ -168,22 +168,22 @@ st.markdown(
         }}
 
 
-        .delta-positive {
+        .delta-positive {{
             color: {VERDE} !important;
             font-weight: 800;
-        }
-        .delta-negative {
+        }}
+        .delta-negative {{
             color: {VERMELHO} !important;
             font-weight: 800;
-        }
-        .kpi-value .delta-arrow {
+        }}
+        .kpi-value .delta-arrow {{
             font-size: 20px;
             margin-left: 6px;
             vertical-align: 2px;
-        }
-        div[data-testid="stVerticalBlock"] {
+        }}
+        div[data-testid="stVerticalBlock"] {{
             gap: 0.75rem;
-        }
+        }}
 
         /* Inputs e multiselects legíveis no tema claro */
         div[data-baseweb="select"] > div,
