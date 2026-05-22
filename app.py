@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import re
-import unicodedata
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
+import plotly.express as px
 import streamlit as st
 
 # ==============================
@@ -31,16 +30,16 @@ VERDE = "#167A3C"
 VERMELHO = "#B42318"
 CINZA_FUNDO = "#F4F7FA"
 CINZA_BORDA = "#D9E2EC"
-TEXTO = "#111827"
+CINZA_TEXTO = "#111827"
 
 CORRETORAS_OFFSHORE = {
     "AVENUE",
     "CHARLES SCHWAB",
-    "CHARLES SHWAB",  # grafia observada na base
+    "CHARLES SHWAB",  # grafia alternativa encontrada em bases operacionais
     "SCHWAB",
-    "SHWAB",
     "XP US",
     "XP INTERNACIONAL",
+    "XP INTERNATIONAL",
     "INTERACTIVE BROKERS",
     "IBKR",
     "PERSHING",
@@ -48,25 +47,41 @@ CORRETORAS_OFFSHORE = {
 }
 
 # ==============================
-# PÁGINA E ESTILO
+# CONFIGURAÇÃO DA PÁGINA
 # ==============================
 
-st.set_page_config(page_title=APP_TITLE, page_icon=None, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon=None,
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ==============================
+# ESTILO INSTITUCIONAL
+# ==============================
 
 st.markdown(
     f"""
     <style>
+        :root {{
+            --primary: {AZUL_ESCURO};
+            --secondary: {AZUL_MEDIO};
+            --text: {CINZA_TEXTO};
+            --muted: #4B5563;
+        }}
+
         .stApp {{
             background: {CINZA_FUNDO};
-            color: {TEXTO};
+            color: var(--text) !important;
         }}
-        .stApp p, .stApp span, .stApp div, .stApp label {{
-            color: {TEXTO};
+        .stApp * {{
+            color: inherit;
         }}
         section[data-testid="stSidebar"] {{
             background: {AZUL_ESCURO};
         }}
-        section[data-testid="stSidebar"], section[data-testid="stSidebar"] * {{
+        section[data-testid="stSidebar"] * {{
             color: white !important;
         }}
         .block-container {{
@@ -74,8 +89,11 @@ st.markdown(
             padding-bottom: 2rem;
             max-width: 1500px;
         }}
+        h1, h2, h3, h4, h5, h6, p, span, label {{
+            color: {CINZA_TEXTO};
+        }}
         h1, h2, h3 {{
-            color: {AZUL_ESCURO};
+            color: {AZUL_ESCURO} !important;
             letter-spacing: -0.02em;
         }}
         .main-title {{
@@ -86,12 +104,16 @@ st.markdown(
             margin-bottom: 18px;
             box-shadow: 0 8px 24px rgba(0, 51, 72, 0.16);
         }}
-        .main-title h1, .main-title p {{
+        .main-title h1 {{
             color: white !important;
             margin: 0;
+            font-size: 30px;
         }}
-        .main-title h1 {{ font-size: 30px; }}
-        .main-title p {{ color: rgba(255,255,255,0.88) !important; margin-top: 6px; font-size: 14px; }}
+        .main-title p {{
+            color: rgba(255,255,255,0.88) !important;
+            margin: 6px 0 0 0;
+            font-size: 14px;
+        }}
         .kpi-card {{
             background: white;
             border: 1px solid {CINZA_BORDA};
@@ -102,8 +124,8 @@ st.markdown(
         }}
         .kpi-label {{
             font-size: 13px;
-            color: #5B677A !important;
-            font-weight: 600;
+            color: #4B5563 !important;
+            font-weight: 700;
             margin-bottom: 10px;
         }}
         .kpi-value {{
@@ -132,27 +154,42 @@ st.markdown(
             padding: 14px 16px;
             box-shadow: 0 5px 16px rgba(15, 23, 42, 0.04);
         }}
-        div[data-testid="stMetricLabel"] {{ color: #5B677A !important; }}
-        div[data-testid="stMetricValue"] {{ color: {AZUL_ESCURO} !important; }}
-        .stDataFrame {{ border-radius: 12px; overflow: hidden; }}
+        div[data-testid="stMetricLabel"] p {{
+            color: #4B5563 !important;
+        }}
+        div[data-testid="stMetricValue"] {{
+            color: {AZUL_ESCURO} !important;
+        }}
+        .stDataFrame {{
+            border-radius: 12px;
+            overflow: hidden;
+        }}
 
-        /* Legibilidade de inputs/selects no tema claro */
-        div[data-baseweb="select"] > div {{
-            background-color: #FFFFFF !important;
-            border-color: #CBD5E1 !important;
+        /* Inputs e multiselects legíveis no tema claro */
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        textarea,
+        input {{
+            background-color: white !important;
+            color: {CINZA_TEXTO} !important;
+            border-color: {CINZA_BORDA} !important;
         }}
         div[data-baseweb="select"] span,
-        div[data-baseweb="select"] input,
-        div[data-baseweb="popover"] * {{
-            color: {TEXTO} !important;
+        div[data-baseweb="select"] div,
+        div[data-baseweb="popover"] span,
+        div[data-baseweb="popover"] div {{
+            color: {CINZA_TEXTO} !important;
         }}
-        div[data-baseweb="tag"] {{ background-color: #E6F0F4 !important; }}
-        div[data-baseweb="tag"] span {{ color: {AZUL_ESCURO} !important; }}
-        .stTextInput input, .stNumberInput input, .stDateInput input {{
-            color: {TEXTO} !important;
-            background-color: #FFFFFF !important;
+        div[data-baseweb="tag"] {{
+            background-color: #E8F2F7 !important;
+            color: {AZUL_ESCURO} !important;
         }}
-        .stAlert, .stAlert * {{ color: {TEXTO} !important; }}
+        div[data-baseweb="tag"] span {{
+            color: {AZUL_ESCURO} !important;
+        }}
+        .stCaption, [data-testid="stCaptionContainer"] {{
+            color: #4B5563 !important;
+        }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -166,8 +203,11 @@ def br_money(value: float | int | None) -> str:
     if pd.isna(value):
         value = 0
     value = float(value)
-    txt = f"R$ {value:,.2f}"
-    return txt.replace(",", "X").replace(".", ",").replace("X", ".")
+    sign = "-" if value < 0 else ""
+    value = abs(value)
+    txt = f"{value:,.2f}"
+    txt = txt.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{sign}R$ {txt}"
 
 
 def br_percent(value: float | int | None) -> str:
@@ -184,57 +224,102 @@ def br_number(value: float | int | None, decimals: int = 0) -> str:
     return txt.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def make_unique_columns(columns):
-    seen = {}
-    out = []
-    for col in columns:
-        col = str(col).strip()
-        if col not in seen:
-            seen[col] = 0
-            out.append(col)
-        else:
-            seen[col] += 1
-            out.append(f"{col}.{seen[col]}")
-    return out
-
-
 def normalize_text(value) -> str:
     if pd.isna(value):
         return "Não informado"
-    value = str(value).strip()
+    value = str(value).replace("\xa0", " ").strip()
     return value if value else "Não informado"
 
 
-def normalize_key(value: str) -> str:
-    value = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"[^A-Z0-9]", "", value.upper())
+def normalize_key(value) -> str:
+    return normalize_text(value).upper().replace("  ", " ")
 
 
-def find_col(df: pd.DataFrame, candidates: List[str]) -> str | None:
-    lookup = {normalize_key(c): c for c in df.columns}
-    for candidate in candidates:
-        key = normalize_key(candidate)
-        if key in lookup:
-            return lookup[key]
-    return None
+def make_unique_columns(columns) -> List[str]:
+    """Evita quebra quando o Excel possui colunas iguais após strip."""
+    seen = {}
+    result = []
+    for col in columns:
+        col = str(col).replace("\xa0", " ").strip()
+        if col not in seen:
+            seen[col] = 0
+            result.append(col)
+        else:
+            seen[col] += 1
+            result.append(f"{col}.{seen[col]}")
+    return result
+
+
+def parse_money_value(value) -> float:
+    """Converte número vindo do Excel sem multiplicar indevidamente por 100.
+
+    O problema principal da base é misturar números reais do Excel com textos em BR
+    (1.177.994,77) e textos em formato americano (878446.54). A regra abaixo trata
+    cada célula individualmente.
+    """
+    if pd.isna(value):
+        return 0.0
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value)
+
+    s = str(value)
+    s = s.replace("R$", "")
+    s = s.replace("US$", "")
+    s = s.replace("$", "")
+    s = s.replace("\xa0", "")
+    s = s.replace(" ", "")
+    s = s.strip()
+
+    if s in {"", "-", "nan", "None"}:
+        return 0.0
+
+    negative = False
+    if s.startswith("(") and s.endswith(")"):
+        negative = True
+        s = s[1:-1]
+    if s.startswith("-"):
+        negative = True
+        s = s[1:]
+
+    has_comma = "," in s
+    has_dot = "." in s
+
+    if has_comma and has_dot:
+        # O último separador define o decimal.
+        if s.rfind(",") > s.rfind("."):
+            # Brasil: 1.234.567,89
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # EUA: 1,234,567.89
+            s = s.replace(",", "")
+    elif has_comma:
+        # Vírgula decimal quando há 1 ou 2 casas ao final; caso contrário, separador de milhar.
+        decimals = len(s.split(",")[-1])
+        if decimals in (1, 2):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif has_dot:
+        parts = s.split(".")
+        if len(parts) > 2:
+            # 1.234.567 ou 1.234.567.89; mantém a última como decimal só se fizer sentido
+            if len(parts[-1]) in (1, 2):
+                s = "".join(parts[:-1]) + "." + parts[-1]
+            else:
+                s = "".join(parts)
+        else:
+            # 878446.54 deve continuar decimal, não virar 87.844.654
+            pass
+
+    try:
+        out = float(s)
+    except ValueError:
+        out = 0.0
+    return -out if negative else out
 
 
 def clean_numeric(series: pd.Series) -> pd.Series:
-    if pd.api.types.is_numeric_dtype(series):
-        return pd.to_numeric(series, errors="coerce").fillna(0)
-
-    cleaned = (
-        series.astype(str)
-        .str.replace("\u00a0", "", regex=False)
-        .str.replace("R$", "", regex=False)
-        .str.replace("US$", "", regex=False)
-        .str.replace("$", "", regex=False)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-        .str.strip()
-    )
-    cleaned = cleaned.replace({"": "0", "nan": "0", "None": "0", "-": "0"})
-    return pd.to_numeric(cleaned, errors="coerce").fillna(0)
+    return series.apply(parse_money_value).astype(float).fillna(0)
 
 
 def extract_pl_columns(df: pd.DataFrame) -> Dict[str, pd.Timestamp]:
@@ -250,15 +335,14 @@ def extract_pl_columns(df: pd.DataFrame) -> Dict[str, pd.Timestamp]:
 
 
 def classify_region(corretora: str) -> str:
-    corretora_clean = normalize_text(corretora).upper().replace("SHWAB", "SCHWAB")
-    offshore_terms = {x.replace("SHWAB", "SCHWAB") for x in CORRETORAS_OFFSHORE}
-    if any(term in corretora_clean for term in offshore_terms):
+    corretora_clean = normalize_key(corretora)
+    if any(term in corretora_clean for term in CORRETORAS_OFFSHORE):
         return "Offshore"
     return "Onshore"
 
 
 def make_line_meta(months: List[pd.Timestamp], first_value: float, target_value: float) -> pd.Series:
-    if not months:
+    if len(months) == 0:
         return pd.Series(dtype=float)
     first_date = min(months)
     last_date = pd.Timestamp(DATA_META)
@@ -286,19 +370,28 @@ def kpi_card(label: str, value: str, sub: str = ""):
 def standard_layout(fig: go.Figure, height: int = 360, legend: bool = True) -> go.Figure:
     fig.update_layout(
         height=height,
-        margin=dict(l=20, r=20, t=45, b=25),
+        margin=dict(l=24, r=24, t=50, b=30),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        font=dict(color=TEXTO, size=12),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) if legend else None,
+        font=dict(color=CINZA_TEXTO, size=12),
+        title_font=dict(color=CINZA_TEXTO, size=16),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(color=CINZA_TEXTO, size=11),
+            bgcolor="rgba(255,255,255,0.85)",
+        ) if legend else None,
     )
-    fig.update_xaxes(showgrid=False, linecolor="#E5E7EB")
-    fig.update_yaxes(gridcolor="#E5E7EB", linecolor="#E5E7EB")
+    fig.update_xaxes(showgrid=False, linecolor="#D1D5DB", tickfont=dict(color=CINZA_TEXTO))
+    fig.update_yaxes(gridcolor="#E5E7EB", linecolor="#D1D5DB", tickfont=dict(color=CINZA_TEXTO))
     return fig
 
 
 def bar_chart(df: pd.DataFrame, x: str, y: str, title: str, horizontal: bool = False, height: int = 360):
-    if df.empty or y not in df.columns or df[y].sum() == 0:
+    if df.empty:
         st.info("Sem dados para exibir neste gráfico.")
         return
     if horizontal:
@@ -308,13 +401,13 @@ def bar_chart(df: pd.DataFrame, x: str, y: str, title: str, horizontal: bool = F
     else:
         fig = px.bar(df, x=x, y=y, title=title, text=y)
         fig.update_traces(marker_color=AZUL_MEDIO, texttemplate="R$ %{y:,.0f}", textposition="outside")
-    fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f") if not horizontal else fig.update_xaxes(tickprefix="R$ ", tickformat=",.0f")
+    fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
     fig = standard_layout(fig, height=height, legend=False)
     st.plotly_chart(fig, use_container_width=True)
 
 
 def donut_chart(df: pd.DataFrame, names: str, values: str, title: str, height: int = 340):
-    if df.empty or values not in df.columns or df[values].sum() == 0:
+    if df.empty or df[values].sum() == 0:
         st.info("Sem dados para exibir neste gráfico.")
         return
     fig = px.pie(df, names=names, values=values, hole=0.56, title=title)
@@ -323,84 +416,63 @@ def donut_chart(df: pd.DataFrame, names: str, values: str, title: str, height: i
     st.plotly_chart(fig, use_container_width=True)
 
 
-def extract_fx_from_workbook(file_path: str) -> Dict[pd.Timestamp, float]:
-    """Lê cotações USDBRL preenchidas na aba de análise, quando existirem."""
-    fx_map: Dict[pd.Timestamp, float] = {}
-    try:
-        xl = pd.ExcelFile(file_path)
-        sheet_name = next((s for s in xl.sheet_names if "ANÁLISE" in s.upper() or "ANALISE" in s.upper()), None)
-        if not sheet_name:
-            return fx_map
-        tmp = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
-        month_map = {
-            "JANEIRO": 1, "FEVEREIRO": 2, "MARÇO": 3, "MARCO": 3, "ABRIL": 4,
-            "MAIO": 5, "JUNHO": 6, "JULHO": 7, "AGOSTO": 8, "SETEMBRO": 9,
-            "OUTUBRO": 10, "NOVEMBRO": 11, "DEZEMBRO": 12,
-        }
-        year = None
-        for val in tmp.values.flatten().tolist():
-            m = re.search(r"20\d{2}", str(val))
-            if m:
-                year = int(m.group(0))
-                break
-        year = year or DATA_META.year
+@st.cache_data(show_spinner="Buscando cotações USDBRL pelo yfinance...")
+def get_usdbrl_quotes(reference_dates: Tuple[str, ...]) -> Dict[str, float]:
+    """Busca fechamento USDBRL para cada data de PL.
 
-        header_row = None
-        dolar_row = None
-        for idx, row in tmp.iterrows():
-            row_text = [str(x).strip().upper() for x in row.tolist()]
-            if any(x in month_map for x in row_text):
-                header_row = idx
-            if any("DÓLAR PRICE" in x or "DOLAR PRICE" in x or "USDBRL" in x or x == "DOLAR" for x in row_text):
-                dolar_row = idx
-        if header_row is None or dolar_row is None:
-            return fx_map
-
-        for col_idx, header in tmp.loc[header_row].items():
-            header_norm = str(header).strip().upper()
-            if header_norm in month_map:
-                fx = clean_numeric(pd.Series([tmp.iat[dolar_row, col_idx]])).iloc[0]
-                if fx > 0:
-                    fx_map[pd.Timestamp(year=year, month=month_map[header_norm], day=1)] = float(fx)
-    except Exception:
-        pass
-    return fx_map
-
-
-@st.cache_data(show_spinner=False)
-def get_usdbrl_close(pl_date: pd.Timestamp, workbook_fx: Dict[pd.Timestamp, float]) -> float:
-    """Prioridade: cotação manual da planilha > yfinance > última cotação manual anterior > 1."""
-    month_key = pd.Timestamp(year=pl_date.year, month=pl_date.month, day=1)
-    if month_key in workbook_fx and workbook_fx[month_key] > 0:
-        return float(workbook_fx[month_key])
+    Regra: usa o último fechamento disponível até a data de referência. Isso resolve
+    meses cujo fechamento operacional caiu em fim de semana/feriado.
+    """
     try:
         import yfinance as yf
-        start = (pl_date - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
-        end = (pl_date + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
-        hist = yf.download("USDBRL=X", start=start, end=end, progress=False, auto_adjust=False)
-        if not hist.empty and "Close" in hist.columns:
-            close = hist["Close"].dropna()
-            close = close[close.index <= pl_date]
-            if not close.empty:
-                return float(close.iloc[-1])
-    except Exception:
-        pass
-    valid = sorted((k, v) for k, v in workbook_fx.items() if v and v > 0 and k <= month_key)
-    if valid:
-        return float(valid[-1][1])
-    return 1.0
+    except Exception as exc:
+        raise RuntimeError(
+            "Biblioteca yfinance não instalada. Rode: pip install yfinance"
+        ) from exc
+
+    if not reference_dates:
+        return {}
+
+    dates = [pd.to_datetime(d).date() for d in reference_dates]
+    start = min(dates) - timedelta(days=10)
+    end = max(dates) + timedelta(days=3)
+
+    data = yf.download("BRL=X", start=start.isoformat(), end=end.isoformat(), progress=False, auto_adjust=False)
+    if data is None or data.empty:
+        raise RuntimeError("Não foi possível baixar USDBRL pelo yfinance para o período da base.")
+
+    close = data["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    close.index = pd.to_datetime(close.index).tz_localize(None)
+    close = close.dropna().astype(float)
+
+    quotes = {}
+    for d in dates:
+        ref = pd.Timestamp(d)
+        available = close[close.index <= ref]
+        if available.empty:
+            available = close[close.index >= ref]
+        if available.empty:
+            raise RuntimeError(f"Não encontrei cotação USDBRL próxima de {d.strftime('%d/%m/%Y')}.")
+        quotes[pd.Timestamp(d).strftime("%Y-%m-%d")] = float(available.iloc[-1])
+    return quotes
 
 
-def get_base_file() -> Path:
-    DATA_DIR.mkdir(exist_ok=True)
-    return DEFAULT_FILE
+def get_latest_valid_pl_col(df: pd.DataFrame, pl_cols: Dict[str, pd.Timestamp]) -> str:
+    """Usa a última coluna de PL que tenha pelo menos algum valor preenchido e diferente de zero."""
+    for col in reversed(list(pl_cols.keys())):
+        series = df[col].fillna(0)
+        if series.abs().sum() > 0:
+            return col
+    return list(pl_cols.keys())[-1]
 
 
 @st.cache_data(show_spinner="Carregando e tratando a base de clientes...")
-def load_data(file_path: str, file_mtime: float) -> Tuple[pd.DataFrame, pd.DataFrame, List[str], Dict[str, pd.Timestamp], Dict[pd.Timestamp, float], str]:
+def load_data(file_path: str, file_mtime: float) -> Tuple[pd.DataFrame, pd.DataFrame, List[str], Dict[str, pd.Timestamp], pd.DataFrame, str]:
     df = pd.read_excel(file_path, sheet_name=MAIN_SHEET)
     df.columns = make_unique_columns(df.columns)
-    df["__row_id"] = np.arange(len(df))
+    df["_row_id"] = np.arange(len(df))
 
     pl_cols = extract_pl_columns(df)
     if not pl_cols:
@@ -410,47 +482,59 @@ def load_data(file_path: str, file_mtime: float) -> Tuple[pd.DataFrame, pd.DataF
         "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
         "Cliente - Corretora", "Conta", "UF", "Consultor", "Tipo de Marcação",
         "Perfil Carteira/ Renda", "Perfil de Investidor", "Consolidador", "Liquidez",
-        "Observações", "Possui Crédito", "Possui Previdência", "Possui Previdência ", "Calculadora de IR", "E-mail",
+        "Observações", "Possui Crédito", "Possui Previdência", "Calculadora de IR", "E-mail",
     ]
     for col in text_cols:
-        real_col = find_col(df, [col])
-        if real_col is not None:
-            df[real_col] = df[real_col].apply(normalize_text)
+        if col in df.columns:
+            df[col] = df[col].apply(normalize_text)
 
-    conta_col = find_col(df, ["Conta"])
-    if conta_col:
-        df[conta_col] = df[conta_col].astype(str).str.replace(".0", "", regex=False).str.strip()
+    if "Conta" in df.columns:
+        df["Conta"] = df["Conta"].astype(str).str.replace(".0", "", regex=False).str.strip()
 
-    corretora_col = find_col(df, ["Corretora"])
-    if corretora_col:
-        df["Região"] = df[corretora_col].apply(classify_region)
-    else:
-        df["Região"] = "Onshore"
-
-    # Limpa PLs e converte Offshore em USD para BRL pelo fechamento do mês/data.
-    workbook_fx = extract_fx_from_workbook(file_path)
-    fx_used: Dict[pd.Timestamp, float] = {}
-    offshore_mask = df["Região"].eq("Offshore")
-    for col, dt in pl_cols.items():
+    # 1) Limpa os PLs sem destruir casas decimais.
+    for col in pl_cols.keys():
         df[col] = clean_numeric(df[col])
-        fx = get_usdbrl_close(dt, workbook_fx)
-        fx_used[dt] = fx
-        df.loc[offshore_mask, col] = df.loc[offshore_mask, col] * fx
 
-    # Última coluna útil: evita escolher um mês D0 ainda vazio e zerar o dashboard.
-    useful_cols = [col for col in pl_cols.keys() if df[col].abs().sum() > 0]
-    latest_col = useful_cols[-1] if useful_cols else list(pl_cols.keys())[-1]
+    # 2) Classifica offshore/onshore pela corretora.
+    df["Região"] = df.get("Corretora", pd.Series(["Não informado"] * len(df))).apply(classify_region)
+
+    # 3) Busca USDBRL exclusivamente no yfinance e converte apenas contas offshore.
+    reference_dates = tuple(pd.Timestamp(dt).strftime("%Y-%m-%d") for dt in pl_cols.values())
+    usdbrl_quotes = get_usdbrl_quotes(reference_dates)
+
+    fx_records = []
+    for col, dt in pl_cols.items():
+        key = pd.Timestamp(dt).strftime("%Y-%m-%d")
+        fx = float(usdbrl_quotes[key])
+        converted_col = f"{col} BRL"
+        df[converted_col] = np.where(df["Região"].eq("Offshore"), df[col] * fx, df[col])
+        fx_records.append({"Data": pd.Timestamp(dt), "Coluna PL": col, "USDBRL usado": fx})
+
+    converted_pl_cols = {f"{col} BRL": dt for col, dt in pl_cols.items()}
+    latest_col = get_latest_valid_pl_col(df, converted_pl_cols)
+
     df["PL Atual"] = df[latest_col].fillna(0)
-    df["Data PL Atual"] = pl_cols[latest_col]
+    df["Data PL Atual"] = converted_pl_cols[latest_col]
 
-    id_cols = [c for c in df.columns if c not in pl_cols.keys()]
-    long_df = df.melt(id_vars=id_cols, value_vars=list(pl_cols.keys()), var_name="Coluna PL", value_name="PL")
-    long_df["Data"] = long_df["Coluna PL"].map(pl_cols)
+    id_cols = [c for c in df.columns if c not in converted_pl_cols.keys()]
+    long_df = df.melt(
+        id_vars=id_cols,
+        value_vars=list(converted_pl_cols.keys()),
+        var_name="Coluna PL Convertida",
+        value_name="PL",
+    )
+    long_df["Data"] = long_df["Coluna PL Convertida"].map(converted_pl_cols)
     long_df["Mês"] = long_df["Data"].dt.to_period("M").astype(str)
     long_df["Ano"] = long_df["Data"].dt.year
     long_df["PL"] = long_df["PL"].fillna(0)
 
-    return df, long_df, list(pl_cols.keys()), pl_cols, fx_used, latest_col
+    fx_df = pd.DataFrame(fx_records)
+    return df, long_df, list(converted_pl_cols.keys()), converted_pl_cols, fx_df, latest_col
+
+
+def get_base_file() -> Path:
+    DATA_DIR.mkdir(exist_ok=True)
+    return DEFAULT_FILE
 
 
 def apply_filters(base: pd.DataFrame, filtros: Dict[str, List[str]]) -> pd.DataFrame:
@@ -464,17 +548,19 @@ def apply_filters(base: pd.DataFrame, filtros: Dict[str, List[str]]) -> pd.DataF
 def filtered_multiselect(label: str, df: pd.DataFrame, col: str):
     if col not in df.columns:
         return []
-    options = sorted([x for x in df[col].dropna().unique().tolist() if str(x).strip() and str(x) != "Não informado"])
+    options = sorted([x for x in df[col].dropna().unique().tolist() if str(x).strip()])
     return st.multiselect(label, options=options, default=[], placeholder="Todos")
 
 
-def sort_money_df(df: pd.DataFrame, money_col: str, ascending: bool = False) -> pd.DataFrame:
-    if money_col not in df.columns:
-        return df
-    return df.sort_values(money_col, ascending=ascending)
+def format_table_money(df: pd.DataFrame, money_cols: List[str]) -> pd.DataFrame:
+    out = df.copy()
+    for col in money_cols:
+        if col in out.columns:
+            out[col] = out[col].apply(br_money)
+    return out
 
 # ==============================
-# SIDEBAR E CARGA DA BASE
+# SIDEBAR
 # ==============================
 
 st.sidebar.markdown("# M Wealth")
@@ -497,19 +583,26 @@ if not base_file.exists():
     st.stop()
 
 try:
-    raw_df, long_df, pl_cols, pl_col_dates, fx_used, latest_col = load_data(str(base_file), base_file.stat().st_mtime)
+    raw_df, long_df, pl_cols, pl_col_dates, fx_df, latest_col = load_data(str(base_file), base_file.stat().st_mtime)
 except Exception as exc:
     st.error(f"Erro ao carregar a base: {exc}")
     st.stop()
 
 latest_date = pl_col_dates[latest_col]
 
-pagina = st.sidebar.radio("Navegação", ["Dashboard Macro", "Análise Detalhada", "Base de Dados"], index=0)
+pagina = st.sidebar.radio(
+    "Navegação",
+    ["Dashboard Macro", "Análise Detalhada", "Base de Dados"],
+    index=0,
+)
+
 st.sidebar.divider()
 st.sidebar.caption(f"Base: {base_file.name}")
-st.sidebar.caption(f"Última coluna útil de PL: {latest_col}")
-if fx_used:
-    st.sidebar.caption("Offshore convertido para BRL por USDBRL.")
+st.sidebar.caption(f"PL Atual: {latest_col.replace(' BRL', '')}")
+
+# ==============================
+# HEADER
+# ==============================
 
 st.markdown(
     f"""
@@ -533,10 +626,9 @@ if pagina == "Dashboard Macro":
     meses_restantes = max((DATA_META.year - today.year) * 12 + (DATA_META.month - today.month), 0)
     semanas_restantes = max((DATA_META - today).days // 7, 0)
 
-    grupo_col = "Grupo Familiar" if "Grupo Familiar" in raw_df.columns else "Cliente"
-    grupos = raw_df.groupby(grupo_col, dropna=False)["PL Atual"].sum().reset_index()
-    grupos_validos = grupos[grupos[grupo_col] != "Não informado"]
-    qtd_grupos = int(grupos_validos[grupo_col].nunique())
+    grupos = raw_df.groupby("Grupo Familiar", dropna=False)["PL Atual"].sum().reset_index()
+    grupos_validos = grupos[grupos["Grupo Familiar"] != "Não informado"]
+    qtd_grupos = int(grupos_validos["Grupo Familiar"].nunique())
     pl_medio_grupo = grupos_validos["PL Atual"].sum() / qtd_grupos if qtd_grupos else 0
 
     col1, col2, col3, col4 = st.columns(4)
@@ -550,36 +642,40 @@ if pagina == "Dashboard Macro":
         kpi_card("Grupos familiares", br_number(qtd_grupos), f"PL médio por grupo: {br_money(pl_medio_grupo)}")
 
     mensal = long_df.groupby("Data", as_index=False)["PL"].sum().sort_values("Data")
-    mensal = mensal[mensal["PL"].abs() > 0]
-    if not mensal.empty:
-        mensal["Meta Linear"] = make_line_meta(mensal["Data"].tolist(), mensal["PL"].iloc[0], META_PL_EMPRESA).values
-        mensal["Percentual da Meta"] = mensal["PL"] / META_PL_EMPRESA
+    mensal["Meta Linear"] = make_line_meta(mensal["Data"].tolist(), mensal["PL"].iloc[0], META_PL_EMPRESA).values
+    mensal["Percentual da Meta"] = mensal["PL"] / META_PL_EMPRESA
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Evolução do PL vs. Meta Patrimonial")
-    if mensal.empty:
-        st.info("Sem dados de PL para exibir a evolução.")
-    else:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=mensal["Data"], y=mensal["PL"], mode="lines+markers", name="PL Realizado", line=dict(color=AZUL_CLARO, width=3), marker=dict(size=7)))
-        fig.add_trace(go.Scatter(x=mensal["Data"], y=mensal["Meta Linear"], mode="lines", name="Meta Linear", line=dict(color=AZUL_ESCURO, width=3)))
-        fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
-        fig = standard_layout(fig, height=420, legend=True)
-        st.plotly_chart(fig, use_container_width=True)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=mensal["Data"], y=mensal["PL"], mode="lines+markers", name="PL Realizado",
+        line=dict(color=AZUL_CLARO, width=3), marker=dict(size=7),
+        hovertemplate="%{x|%d/%m/%Y}<br>PL: R$ %{y:,.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=mensal["Data"], y=mensal["Meta Linear"], mode="lines", name="Meta Linear",
+        line=dict(color=AZUL_ESCURO, width=3),
+        hovertemplate="%{x|%d/%m/%Y}<br>Meta: R$ %{y:,.2f}<extra></extra>",
+    ))
+    fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
+    fig = standard_layout(fig, height=420, legend=True)
+    st.plotly_chart(fig, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     c1, c2 = st.columns([1.25, 1])
+
     with c1:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("PL por Corretora")
-        if "Corretora" in raw_df.columns:
-            corretora = raw_df.groupby("Corretora", as_index=False)["PL Atual"].sum().pipe(sort_money_df, "PL Atual")
-            bar_chart(corretora, "Corretora", "PL Atual", "Distribuição por Corretora", horizontal=False, height=390)
+        corretora = raw_df.groupby("Corretora", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False)
+        bar_chart(corretora, "Corretora", "PL Atual", "Distribuição por Corretora", horizontal=False, height=390)
         st.markdown('</div>', unsafe_allow_html=True)
+
     with c2:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Onshore vs. Offshore")
-        regiao = raw_df.groupby("Região", as_index=False)["PL Atual"].sum().pipe(sort_money_df, "PL Atual")
+        regiao = raw_df.groupby("Região", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False)
         donut_chart(regiao, "Região", "PL Atual", "Proporção de PL", height=390)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -588,20 +684,27 @@ if pagina == "Dashboard Macro":
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Proporção por Canal")
         if "Canal" in raw_df.columns:
-            canal = raw_df.groupby("Canal", as_index=False)["PL Atual"].sum().pipe(sort_money_df, "PL Atual")
+            canal = raw_df.groupby("Canal", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False)
             donut_chart(canal, "Canal", "PL Atual", "Wealth, Tesouraria e Demais Canais", height=370)
         else:
             st.info("Coluna Canal não encontrada na base.")
         st.markdown('</div>', unsafe_allow_html=True)
+
     with c4:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Segmentação da Base por Faixa de PL")
-        cliente_col = "Cliente" if "Cliente" in raw_df.columns else grupo_col
-        cliente_pl = raw_df.groupby(cliente_col, as_index=False)["PL Atual"].sum()
+        cliente_pl = raw_df.groupby("Cliente", as_index=False)["PL Atual"].sum()
         bins = [-0.01, 5_000_000, 10_000_000, 15_000_000, 30_000_000, 100_000_000, np.inf]
-        labels = ["Até R$ 5 MM", "R$ 5 MM a R$ 10 MM", "R$ 10 MM a R$ 15 MM", "R$ 15 MM a R$ 30 MM", "R$ 30 MM a R$ 100 MM", "Acima de R$ 100 MM"]
+        labels = [
+            "Até R$ 5 MM",
+            "R$ 5 MM a R$ 10 MM",
+            "R$ 10 MM a R$ 15 MM",
+            "R$ 15 MM a R$ 30 MM",
+            "R$ 30 MM a R$ 100 MM",
+            "Acima de R$ 100 MM",
+        ]
         cliente_pl["Faixa"] = pd.cut(cliente_pl["PL Atual"], bins=bins, labels=labels)
-        faixa = cliente_pl.groupby("Faixa", observed=False).agg(Clientes=(cliente_col, "count"), PL=("PL Atual", "sum")).reset_index()
+        faixa = cliente_pl.groupby("Faixa", observed=False).agg(Clientes=("Cliente", "count"), PL=("PL Atual", "sum")).reset_index()
         donut_chart(faixa, "Faixa", "Clientes", "Quantidade de Clientes por Faixa", height=370)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -609,15 +712,15 @@ if pagina == "Dashboard Macro":
     with c5:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Top 10 Clientes")
-        cliente_col = "Cliente" if "Cliente" in raw_df.columns else grupo_col
-        top_clientes = raw_df.groupby(cliente_col, as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
-        bar_chart(top_clientes.sort_values("PL Atual"), cliente_col, "PL Atual", "Maiores Clientes por PL", horizontal=True, height=450)
+        top_clientes = raw_df.groupby("Cliente", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
+        bar_chart(top_clientes.sort_values("PL Atual"), "Cliente", "PL Atual", "Maiores Clientes por PL", horizontal=True, height=450)
         st.markdown('</div>', unsafe_allow_html=True)
+
     with c6:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Top 10 Grupos Familiares")
-        top_grupos = raw_df.groupby(grupo_col, as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
-        bar_chart(top_grupos.sort_values("PL Atual"), grupo_col, "PL Atual", "Maiores Grupos por PL", horizontal=True, height=450)
+        top_grupos = raw_df.groupby("Grupo Familiar", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
+        bar_chart(top_grupos.sort_values("PL Atual"), "Grupo Familiar", "PL Atual", "Maiores Grupos por PL", horizontal=True, height=450)
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================
@@ -630,6 +733,7 @@ elif pagina == "Análise Detalhada":
 
     f1, f2, f3 = st.columns(3)
     f4, f5, f6 = st.columns(3)
+
     with f1:
         consultores = filtered_multiselect("Consultor", raw_df, "Consultor")
     with f2:
@@ -643,10 +747,16 @@ elif pagina == "Análise Detalhada":
     with f6:
         tipo_pessoa = filtered_multiselect("PF ou PJ", raw_df, "PF/ PJ")
 
-    filtros = {"Consultor": consultores, "Cliente": clientes, "Grupo Familiar": grupos_familiares, "Corretora": corretoras, "Canal": canais, "PF/ PJ": tipo_pessoa}
-    base_filtrada = apply_filters(raw_df, filtros)
-    row_ids = base_filtrada["__row_id"].tolist() if "__row_id" in base_filtrada.columns else []
+    filtros = {
+        "Consultor": consultores,
+        "Cliente": clientes,
+        "Grupo Familiar": grupos_familiares,
+        "Corretora": corretoras,
+        "Canal": canais,
+        "PF/ PJ": tipo_pessoa,
+    }
 
+    base_filtrada = apply_filters(raw_df, filtros)
     contas_filtradas = base_filtrada["Conta"].nunique() if "Conta" in base_filtrada.columns else len(base_filtrada)
     clientes_filtrados = base_filtrada["Cliente"].nunique() if "Cliente" in base_filtrada.columns else len(base_filtrada)
     grupos_filtrados = base_filtrada["Grupo Familiar"].nunique() if "Grupo Familiar" in base_filtrada.columns else 0
@@ -662,12 +772,12 @@ elif pagina == "Análise Detalhada":
     with k4:
         kpi_card("Grupos familiares", br_number(grupos_filtrados), "Grupos únicos na seleção")
 
-    long_filtrado = long_df[long_df["__row_id"].isin(row_ids)] if row_ids else long_df.iloc[0:0]
+    row_ids = base_filtrada["_row_id"].tolist() if not base_filtrada.empty else []
+    long_filtrado = long_df[long_df["_row_id"].isin(row_ids)] if row_ids else long_df.iloc[0:0]
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Evolução Histórica da Seleção")
     evo = long_filtrado.groupby("Data", as_index=False)["PL"].sum().sort_values("Data")
-    evo = evo[evo["PL"].abs() > 0]
     if evo.empty:
         st.info("Nenhum dado encontrado para os filtros selecionados.")
     else:
@@ -686,21 +796,25 @@ elif pagina == "Análise Detalhada":
             por_consultor = base_filtrada.groupby("Consultor", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(20)
             bar_chart(por_consultor.sort_values("PL Atual"), "Consultor", "PL Atual", "Ranking de Consultores", horizontal=True, height=500)
         st.markdown('</div>', unsafe_allow_html=True)
+
     with c2:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("PL por Grupo Familiar")
-        grupo_col = "Grupo Familiar" if "Grupo Familiar" in base_filtrada.columns else "Cliente"
-        por_grupo = base_filtrada.groupby(grupo_col, as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(20)
-        bar_chart(por_grupo.sort_values("PL Atual"), grupo_col, "PL Atual", "Ranking de Grupos", horizontal=True, height=500)
+        por_grupo = base_filtrada.groupby("Grupo Familiar", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(20)
+        bar_chart(por_grupo.sort_values("PL Atual"), "Grupo Familiar", "PL Atual", "Ranking de Grupos", horizontal=True, height=500)
         st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Tabela Analítica")
-    cols_show = ["Corretora", "Região", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal", "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "PL Atual"]
+    cols_show = [
+        "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
+        "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "Região", "PL Atual",
+    ]
     cols_show = [c for c in cols_show if c in base_filtrada.columns]
     tabela = base_filtrada[cols_show].sort_values("PL Atual", ascending=False).copy()
-    st.dataframe(tabela, use_container_width=True, hide_index=True, column_config={"PL Atual": st.column_config.NumberColumn("PL Atual", format="R$ %.2f")})
-    csv = tabela.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
+    tabela_display = format_table_money(tabela, ["PL Atual"])
+    st.dataframe(tabela_display, use_container_width=True, hide_index=True)
+    csv = tabela.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("Baixar tabela filtrada em CSV", csv, "base_filtrada_mwealth.csv", "text/csv")
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -710,30 +824,31 @@ elif pagina == "Análise Detalhada":
 
 else:
     st.subheader("Base de Dados")
-    st.caption("Visualização de controle para conferência da planilha carregada e da conversão de offshore.")
+    st.caption("Visualização de controle para conferência da planilha carregada.")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Linhas", br_number(len(raw_df)))
     c2.metric("Colunas", br_number(len(raw_df.columns)))
     c3.metric("Colunas de PL", br_number(len(pl_cols)))
-    c4.metric("Última data útil de PL", latest_date.strftime("%d/%m/%Y"))
+    c4.metric("Última data de PL", latest_date.strftime("%d/%m/%Y"))
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Colunas de PL Identificadas")
-    mapa_pl = pd.DataFrame({"Coluna": list(pl_col_dates.keys()), "Data": list(pl_col_dates.values())})
-    mapa_pl["Usada como PL Atual"] = mapa_pl["Coluna"].eq(latest_col)
+    mapa_pl = pd.DataFrame({"Coluna Convertida": list(pl_col_dates.keys()), "Data": list(pl_col_dates.values())})
     st.dataframe(mapa_pl, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    st.subheader("Cotações USDBRL Utilizadas para Offshore")
-    fx_df = pd.DataFrame({"Data PL": list(fx_used.keys()), "USDBRL usado": list(fx_used.values())}).sort_values("Data PL")
-    st.dataframe(fx_df, use_container_width=True, hide_index=True, column_config={"USDBRL usado": st.column_config.NumberColumn("USDBRL usado", format="%.4f")})
-    st.caption("Quando a cotação estiver preenchida na planilha, ela tem prioridade. Na ausência, o app tenta buscar via yfinance. Se nada estiver disponível, usa 1,00 como fallback para não quebrar a carga.")
+    st.subheader("Cotações USDBRL Usadas na Conversão Offshore")
+    fx_show = fx_df.copy()
+    fx_show["USDBRL usado"] = fx_show["USDBRL usado"].map(lambda x: br_number(x, 4))
+    st.dataframe(fx_show, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    st.subheader("Prévia da Base Tratada")
-    cols_preview = [c for c in ["Corretora", "Região", "Grupo Familiar", "Cliente", "Canal", "Conta", "Consultor", "PL Atual"] if c in raw_df.columns]
-    st.dataframe(raw_df[cols_preview].head(300), use_container_width=True, hide_index=True)
+    st.subheader("Prévia da Base")
+    preview = raw_df.head(200).copy()
+    if "PL Atual" in preview.columns:
+        preview["PL Atual"] = preview["PL Atual"].apply(br_money)
+    st.dataframe(preview, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
