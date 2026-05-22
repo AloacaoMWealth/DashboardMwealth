@@ -416,12 +416,43 @@ def donut_chart(df: pd.DataFrame, names: str, values: str, title: str, height: i
     st.plotly_chart(fig, use_container_width=True)
 
 
+def _extract_close_series(data: pd.DataFrame) -> pd.Series:
+    """Extrai uma série de fechamento mesmo quando o yfinance devolve MultiIndex."""
+    if data is None or data.empty:
+        return pd.Series(dtype=float)
+
+    if isinstance(data.columns, pd.MultiIndex):
+        close_cols = [col for col in data.columns if str(col[0]).lower() == "close"]
+        if not close_cols:
+            close_cols = [col for col in data.columns if "close" in str(col).lower()]
+        if not close_cols:
+            return pd.Series(dtype=float)
+        close = data[close_cols[0]]
+    elif "Close" in data.columns:
+        close = data["Close"]
+    elif "Adj Close" in data.columns:
+        close = data["Adj Close"]
+    else:
+        return pd.Series(dtype=float)
+
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+
+    close.index = pd.to_datetime(close.index).tz_localize(None)
+    close = pd.to_numeric(close, errors="coerce").dropna().astype(float)
+    close = close[close > 0]
+    return close.sort_index()
+
+
 @st.cache_data(show_spinner="Buscando cotações USDBRL pelo yfinance...")
 def get_usdbrl_quotes(reference_dates: Tuple[str, ...]) -> Dict[str, float]:
-    """Busca fechamento USDBRL para cada data de PL.
+    """Busca fechamento USDBRL para cada data de PL usando apenas yfinance.
 
-    Regra: usa o último fechamento disponível até a data de referência. Isso resolve
-    meses cujo fechamento operacional caiu em fim de semana/feriado.
+    Regras:
+    - tenta mais de um ticker aceito pelo Yahoo Finance;
+    - usa o último fechamento disponível até a data de referência;
+    - ignora meses sem PL preenchido, para não tentar buscar datas futuras/vazias;
+    - se a data de referência for futura, usa o último fechamento disponível até hoje.
     """
     try:
         import yfinance as yf
@@ -433,29 +464,64 @@ def get_usdbrl_quotes(reference_dates: Tuple[str, ...]) -> Dict[str, float]:
     if not reference_dates:
         return {}
 
-    dates = [pd.to_datetime(d).date() for d in reference_dates]
-    start = min(dates) - timedelta(days=10)
-    end = max(dates) + timedelta(days=3)
+    dates = sorted({pd.to_datetime(d).date() for d in reference_dates})
+    today = date.today()
+    start = min(dates) - timedelta(days=15)
+    # yfinance usa end exclusivo. Não adianta pedir muito no futuro.
+    end_limit = min(max(dates) + timedelta(days=5), today + timedelta(days=1))
 
-    data = yf.download("BRL=X", start=start.isoformat(), end=end.isoformat(), progress=False, auto_adjust=False)
-    if data is None or data.empty:
-        raise RuntimeError("Não foi possível baixar USDBRL pelo yfinance para o período da base.")
+    tickers = ["USDBRL=X", "BRL=X"]
+    errors = []
+    close = pd.Series(dtype=float)
 
-    close = data["Close"]
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    close.index = pd.to_datetime(close.index).tz_localize(None)
-    close = close.dropna().astype(float)
+    for ticker in tickers:
+        try:
+            data = yf.download(
+                ticker,
+                start=start.isoformat(),
+                end=end_limit.isoformat(),
+                progress=False,
+                auto_adjust=False,
+                threads=False,
+                timeout=20,
+            )
+            close = _extract_close_series(data)
+            if not close.empty:
+                break
+        except Exception as exc:
+            errors.append(f"{ticker}/download: {exc}")
+
+        try:
+            hist = yf.Ticker(ticker).history(
+                start=start.isoformat(),
+                end=end_limit.isoformat(),
+                auto_adjust=False,
+                timeout=20,
+            )
+            close = _extract_close_series(hist)
+            if not close.empty:
+                break
+        except Exception as exc:
+            errors.append(f"{ticker}/history: {exc}")
+
+    if close.empty:
+        detalhe = " | ".join(errors[-4:]) if errors else "sem detalhe retornado pelo Yahoo Finance"
+        raise RuntimeError(
+            "Não foi possível baixar USDBRL pelo yfinance. "
+            "Confira se o ambiente tem internet e se yfinance está instalado/atualizado. "
+            f"Detalhe: {detalhe}"
+        )
 
     quotes = {}
     for d in dates:
-        ref = pd.Timestamp(d)
+        ref = min(pd.Timestamp(d), close.index.max())
         available = close[close.index <= ref]
         if available.empty:
             available = close[close.index >= ref]
         if available.empty:
             raise RuntimeError(f"Não encontrei cotação USDBRL próxima de {d.strftime('%d/%m/%Y')}.")
         quotes[pd.Timestamp(d).strftime("%Y-%m-%d")] = float(available.iloc[-1])
+
     return quotes
 
 
@@ -499,18 +565,24 @@ def load_data(file_path: str, file_mtime: float) -> Tuple[pd.DataFrame, pd.DataF
     df["Região"] = df.get("Corretora", pd.Series(["Não informado"] * len(df))).apply(classify_region)
 
     # 3) Busca USDBRL exclusivamente no yfinance e converte apenas contas offshore.
-    reference_dates = tuple(pd.Timestamp(dt).strftime("%Y-%m-%d") for dt in pl_cols.values())
+    # Usa somente colunas de PL preenchidas. Isso evita distorção por mês futuro/vazio.
+    active_pl_cols = {col: dt for col, dt in pl_cols.items() if df[col].abs().sum() > 0}
+    if not active_pl_cols:
+        raise ValueError("As colunas de PL foram identificadas, mas todas estão zeradas/vazias.")
+
+    reference_dates = tuple(pd.Timestamp(dt).strftime("%Y-%m-%d") for dt in active_pl_cols.values())
     usdbrl_quotes = get_usdbrl_quotes(reference_dates)
 
     fx_records = []
-    for col, dt in pl_cols.items():
+    converted_pl_cols = {}
+    for col, dt in active_pl_cols.items():
         key = pd.Timestamp(dt).strftime("%Y-%m-%d")
         fx = float(usdbrl_quotes[key])
         converted_col = f"{col} BRL"
         df[converted_col] = np.where(df["Região"].eq("Offshore"), df[col] * fx, df[col])
+        converted_pl_cols[converted_col] = dt
         fx_records.append({"Data": pd.Timestamp(dt), "Coluna PL": col, "USDBRL usado": fx})
 
-    converted_pl_cols = {f"{col} BRL": dt for col, dt in pl_cols.items()}
     latest_col = get_latest_valid_pl_col(df, converted_pl_cols)
 
     df["PL Atual"] = df[latest_col].fillna(0)
@@ -577,6 +649,10 @@ with st.sidebar.expander("Atualização da base", expanded=False):
             f.write(uploaded.getbuffer())
         st.cache_data.clear()
         st.success("Base atualizada. Recarregue a página se necessário.")
+
+    if st.button("Limpar cache e recarregar cotações", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 if not base_file.exists():
     st.error("Arquivo base não encontrado. Inclua a planilha em data/Controle de Clientes MWealth 2026.xlsx ou envie pelo upload lateral.")
