@@ -87,8 +87,8 @@ st.markdown(
             color: white !important;
         }}
         .block-container {{
-            padding-top: 1.5rem;
-            padding-bottom: 2rem;
+            padding-top: 1.0rem;
+            padding-bottom: 1.5rem;
             max-width: 1500px;
         }}
         h1, h2, h3, h4, h5, h6, p, span, label {{
@@ -101,9 +101,9 @@ st.markdown(
         .main-title {{
             background: linear-gradient(90deg, {AZUL_ESCURO}, {AZUL_MEDIO});
             color: white !important;
-            padding: 22px 28px;
+            padding: 18px 26px;
             border-radius: 18px;
-            margin-bottom: 18px;
+            margin-bottom: 14px;
             box-shadow: 0 8px 24px rgba(0, 51, 72, 0.16);
         }}
         .main-title h1 {{
@@ -120,8 +120,8 @@ st.markdown(
             background: white;
             border: 1px solid {CINZA_BORDA};
             border-radius: 16px;
-            padding: 18px 18px;
-            min-height: 118px;
+            padding: 14px 16px;
+            min-height: 102px;
             box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
         }}
         .kpi-label {{
@@ -131,7 +131,7 @@ st.markdown(
             margin-bottom: 10px;
         }}
         .kpi-value {{
-            font-size: 25px;
+            font-size: 23px;
             color: {AZUL_ESCURO} !important;
             font-weight: 800;
             line-height: 1.1;
@@ -145,8 +145,8 @@ st.markdown(
             background: white;
             border: 1px solid {CINZA_BORDA};
             border-radius: 18px;
-            padding: 18px;
-            margin-bottom: 18px;
+            padding: 14px;
+            margin-bottom: 12px;
             box-shadow: 0 6px 18px rgba(15, 23, 42, 0.045);
         }}
         div[data-testid="stMetric"] {{
@@ -166,6 +166,24 @@ st.markdown(
             border-radius: 12px;
             overflow: hidden;
         }}
+
+
+        .delta-positive {
+            color: {VERDE} !important;
+            font-weight: 800;
+        }
+        .delta-negative {
+            color: {VERMELHO} !important;
+            font-weight: 800;
+        }
+        .kpi-value .delta-arrow {
+            font-size: 20px;
+            margin-left: 6px;
+            vertical-align: 2px;
+        }
+        div[data-testid="stVerticalBlock"] {
+            gap: 0.75rem;
+        }
 
         /* Inputs e multiselects legíveis no tema claro */
         div[data-baseweb="select"] > div,
@@ -363,6 +381,22 @@ def kpi_card(label: str, value: str, sub: str = ""):
             <div class="kpi-label">{label}</div>
             <div class="kpi-value">{value}</div>
             <div class="kpi-sub">{sub}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def variation_card(label: str, value: float, pct: float, sub: str = ""):
+    positive = value >= 0
+    arrow = "▲" if positive else "▼"
+    klass = "delta-positive" if positive else "delta-negative"
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value {klass}">{br_money(value)}<span class="delta-arrow">{arrow}</span></div>
+            <div class="kpi-sub">{sub} | {br_percent(pct)}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -714,10 +748,6 @@ else:
 
 st.sidebar.markdown("Dashboard macro do escritório")
 
-if st.sidebar.button("Atualizar dados / limpar cache", use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
-
 if not base_file.exists():
     st.error("Arquivo base não encontrado. Inclua a planilha em data/Controle de Clientes MWealth 2026.xlsx ou envie pelo upload lateral.")
     st.stop()
@@ -809,19 +839,16 @@ if pagina == "Dashboard Macro":
         closed_start = mensal["Data"].iloc[-1]
     _, _, delta_closed, pct_delta_closed = calc_delta_from_mensal(mensal, closed_end, closed_start)
 
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     v1, v2, v3, v4 = st.columns(4)
     with v1:
-        kpi_card("Variação período atual", br_money(delta_latest), f"{month_display(datas_mensais[prev_idx])} até {month_display(datas_mensais[latest_idx])} | {br_percent(pct_delta_latest)}")
+        variation_card("Variação período atual", delta_latest, pct_delta_latest, f"{month_display(datas_mensais[prev_idx])} até {month_display(datas_mensais[latest_idx])}")
     with v2:
-        kpi_card("Variação último mês fechado", br_money(delta_closed), f"{month_display(closed_start)} até {month_display(closed_end)} | {br_percent(pct_delta_closed)}")
+        variation_card("Variação último mês fechado", delta_closed, pct_delta_closed, f"{month_display(closed_start)} até {month_display(closed_end)}")
     with v3:
         kpi_card("PL mês anterior", br_money(start_prev), f"Referência: {month_display(datas_mensais[prev_idx])}")
     with v4:
         kpi_card("Meta linear atual", br_money(meta_linear_atual), f"Executado: {br_percent(current_pl / meta_linear_atual if meta_linear_atual else 0)}")
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Evolução do PL vs. Meta Patrimonial")
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -837,37 +864,37 @@ if pagina == "Dashboard Macro":
     fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
     fig = standard_layout(fig, height=420, legend=True)
     st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
     c1, c2 = st.columns([1.25, 1])
 
     with c1:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("PL por Corretora")
         corretora = raw_df.groupby("Corretora", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False)
         bar_chart(corretora, "Corretora", "PL Atual", "Distribuição por Corretora", horizontal=False, height=390)
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
     with c2:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Onshore vs. Offshore")
         regiao = raw_df.groupby("Região", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False)
         donut_chart(regiao, "Região", "PL Atual", "Proporção de PL", height=390)
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
     c3, c4 = st.columns(2)
     with c3:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Proporção por Canal")
         if "Canal" in raw_df.columns:
-            canal = raw_df.groupby("Canal", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False)
-            value_bar_chart(canal, "Canal", "PL Atual", "Participação de PL por Canal", height=330, money=True)
+            canal = raw_df.groupby("Canal", as_index=False).agg(
+                **{"PL Atual": ("PL Atual", "sum"), "Clientes": ("Cliente", "nunique"), "Grupos": ("Grupo Familiar", "nunique")}
+            ).sort_values("PL Atual", ascending=False)
+            value_bar_chart(canal, "Canal", "PL Atual", "Participação de PL por Canal", height=285, money=True)
+            canal_display = canal.copy()
+            total_canal = canal_display["PL Atual"].sum()
+            canal_display["Participação"] = np.where(total_canal != 0, canal_display["PL Atual"] / total_canal, 0)
+            canal_display["PL Atual"] = canal_display["PL Atual"].apply(br_money)
+            canal_display["Participação"] = canal_display["Participação"].apply(br_percent)
+            st.dataframe(canal_display, use_container_width=True, hide_index=True)
         else:
             st.info("Coluna Canal não encontrada na base.")
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
     with c4:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Segmentação da Base por Faixa de PL")
         cliente_pl = raw_df.groupby("Cliente", as_index=False)["PL Atual"].sum()
         bins = [-0.01, 5_000_000, 10_000_000, 15_000_000, 30_000_000, 100_000_000, np.inf]
@@ -881,27 +908,22 @@ if pagina == "Dashboard Macro":
         ]
         cliente_pl["Faixa"] = pd.cut(cliente_pl["PL Atual"], bins=bins, labels=labels)
         faixa = cliente_pl.groupby("Faixa", observed=False).agg(Clientes=("Cliente", "count"), PL=("PL Atual", "sum")).reset_index()
-        value_bar_chart(faixa, "Faixa", "Clientes", "Quantidade de Clientes por Faixa", height=330, money=False)
+        value_bar_chart(faixa, "Faixa", "Clientes", "Quantidade de Clientes por Faixa", height=285, money=False)
         faixa_display = faixa.copy()
         faixa_display["PL"] = faixa_display["PL"].apply(br_money)
         st.dataframe(faixa_display, use_container_width=True, hide_index=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
     c5, c6 = st.columns(2)
     with c5:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Top 10 Clientes")
         top_clientes = raw_df.groupby("Cliente", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
         bar_chart(top_clientes, "Cliente", "PL Atual", "Maiores Clientes por PL", horizontal=True, height=450)
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
     with c6:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Top 10 Grupos Familiares")
         top_grupos = raw_df.groupby("Grupo Familiar", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
         bar_chart(top_grupos, "Grupo Familiar", "PL Atual", "Maiores Grupos por PL", horizontal=True, height=450)
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
 # ==============================
 # ANÁLISE DETALHADA
 # ==============================
@@ -985,7 +1007,6 @@ elif pagina == "Análise Detalhada":
     long_filtrado = long_df[long_df["_row_id"].isin(row_ids)] if row_ids else long_df.iloc[0:0]
     long_filtrado = long_filtrado[(long_filtrado["Data"] >= data_inicio) & (long_filtrado["Data"] <= data_fim)]
 
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Evolução Histórica da Seleção")
     evo = long_filtrado.groupby("Data", as_index=False)["PL"].sum().sort_values("Data")
     if evo.empty:
@@ -996,32 +1017,24 @@ elif pagina == "Análise Detalhada":
         fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
         fig = standard_layout(fig, height=360, legend=False)
         st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("PL por Consultor")
         if "Consultor" in base_filtrada.columns:
             por_consultor = base_filtrada.groupby("Consultor", as_index=False).agg({"PL Final Período": "sum", "Variação PL": "sum"}).reset_index().sort_values("PL Final Período", ascending=False).head(20)
             bar_chart(por_consultor.rename(columns={"PL Final Período": "PL"}), "Consultor", "PL", "Ranking de Consultores por PL Final", horizontal=True, height=500)
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
     with c2:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("PL por Grupo Familiar")
         por_grupo = base_filtrada.groupby("Grupo Familiar", as_index=False).agg({"PL Final Período": "sum", "Variação PL": "sum"}).reset_index().sort_values("PL Final Período", ascending=False).head(20)
         bar_chart(por_grupo.rename(columns={"PL Final Período": "PL"}), "Grupo Familiar", "PL", "Ranking de Grupos por PL Final", horizontal=True, height=500)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    
     st.subheader("Maiores Variações Patrimoniais no Período")
     if "Consultor" in base_filtrada.columns and not base_filtrada.empty:
         variacao_consultor = base_filtrada.groupby("Consultor", as_index=False)["Variação PL"].sum().sort_values("Variação PL", ascending=False).head(15)
         bar_chart(variacao_consultor.rename(columns={"Variação PL": "Variação"}), "Consultor", "Variação", "Variação por Consultor", horizontal=True, height=420)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Tabela Analítica")
     cols_show = [
         "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
@@ -1036,7 +1049,6 @@ elif pagina == "Análise Detalhada":
     st.dataframe(tabela_display, use_container_width=True, hide_index=True)
     csv = tabela.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("Baixar tabela filtrada em CSV", csv, "base_filtrada_mwealth.csv", "text/csv")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================
 # BASE DE DADOS
@@ -1052,23 +1064,17 @@ else:
     c3.metric("Colunas de PL", br_number(len(pl_cols)))
     c4.metric("Última data de PL", latest_date.strftime("%d/%m/%Y"))
 
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Colunas de PL Identificadas")
     mapa_pl = pd.DataFrame({"Coluna Convertida": list(pl_col_dates.keys()), "Data": list(pl_col_dates.values())})
     st.dataframe(mapa_pl, use_container_width=True, hide_index=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Cotações USDBRL Usadas na Conversão Offshore")
     fx_show = fx_df.copy()
     fx_show["USDBRL usado"] = fx_show["USDBRL usado"].map(lambda x: br_number(x, 4))
     st.dataframe(fx_show, use_container_width=True, hide_index=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Prévia da Base")
     preview = raw_df.head(200).copy()
     if "PL Atual" in preview.columns:
         preview["PL Atual"] = preview["PL Atual"].apply(br_money)
     st.dataframe(preview, use_container_width=True, hide_index=True)
-    st.markdown('</div>', unsafe_allow_html=True)
