@@ -18,6 +18,8 @@ import streamlit as st
 APP_TITLE = "Dashboard Macro M Wealth"
 DATA_DIR = Path("data")
 DEFAULT_FILE = DATA_DIR / "Controle de Clientes MWealth 2026.xlsx"
+ASSETS_DIR = Path("assets")
+LOGO_FILE = ASSETS_DIR / "Logo-M-Wealth.png"
 MAIN_SHEET = "Controle Contas"
 META_PL_EMPRESA = 500_000_000.00
 DATA_META = date(2026, 12, 31)
@@ -394,17 +396,62 @@ def bar_chart(df: pd.DataFrame, x: str, y: str, title: str, horizontal: bool = F
     if df.empty:
         st.info("Sem dados para exibir neste gráfico.")
         return
+    plot_df = df.copy()
     if horizontal:
-        fig = px.bar(df, x=y, y=x, orientation="h", title=title, text=y)
-        fig.update_traces(marker_color=AZUL_MEDIO, texttemplate="R$ %{x:,.0f}", textposition="outside")
-        fig.update_layout(yaxis=dict(autorange="reversed"))
+        fig = px.bar(plot_df, x=y, y=x, orientation="h", title=title, text=y)
+        fig.update_traces(
+            marker_color=AZUL_MEDIO,
+            texttemplate="R$ %{x:,.0f}",
+            textposition="auto",
+            cliponaxis=False,
+            hovertemplate="%{y}<br>PL: R$ %{x:,.2f}<extra></extra>",
+        )
+        fig.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=24, r=110, t=50, b=30))
+        fig.update_xaxes(tickprefix="R$ ", tickformat=",.0f")
     else:
-        fig = px.bar(df, x=x, y=y, title=title, text=y)
-        fig.update_traces(marker_color=AZUL_MEDIO, texttemplate="R$ %{y:,.0f}", textposition="outside")
-    fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
+        fig = px.bar(plot_df, x=x, y=y, title=title, text=y)
+        fig.update_traces(
+            marker_color=AZUL_MEDIO,
+            texttemplate="R$ %{y:,.0f}",
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{x}<br>PL: R$ %{y:,.2f}<extra></extra>",
+        )
+        fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
     fig = standard_layout(fig, height=height, legend=False)
     st.plotly_chart(fig, use_container_width=True)
 
+
+def value_bar_chart(df: pd.DataFrame, category: str, value: str, title: str, height: int = 340, money: bool = True):
+    if df.empty or df[value].fillna(0).abs().sum() == 0:
+        st.info("Sem dados para exibir neste gráfico.")
+        return
+    d = df.copy()
+    if money:
+        total = d[value].sum()
+        d["Participação"] = np.where(total != 0, d[value] / total, 0)
+        d["Texto"] = d.apply(lambda r: f"{br_money(r[value])} | {br_percent(r['Participação'])}", axis=1)
+        hover = "%{y}<br>Valor: R$ %{x:,.2f}<br>Participação: %{customdata:.2%}<extra></extra>"
+        tickprefix = "R$ "
+        customdata = d["Participação"]
+    else:
+        total = d[value].sum()
+        d["Participação"] = np.where(total != 0, d[value] / total, 0)
+        d["Texto"] = d.apply(lambda r: f"{br_number(r[value])} | {br_percent(r['Participação'])}", axis=1)
+        hover = "%{y}<br>Valor: %{x:,.0f}<br>Participação: %{customdata:.2%}<extra></extra>"
+        tickprefix = ""
+        customdata = d["Participação"]
+    d = d.sort_values(value, ascending=True)
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=d[value], y=d[category], orientation="h", marker_color=AZUL_MEDIO,
+        text=d["Texto"], textposition="auto", cliponaxis=False,
+        customdata=customdata, hovertemplate=hover,
+    ))
+    fig.update_layout(title=title, margin=dict(l=24, r=150, t=50, b=30))
+    fig.update_xaxes(tickprefix=tickprefix, tickformat=",.0f")
+    fig = standard_layout(fig, height=height, legend=False)
+    st.plotly_chart(fig, use_container_width=True)
 
 def donut_chart(df: pd.DataFrame, names: str, values: str, title: str, height: int = 340):
     if df.empty or df[values].sum() == 0:
@@ -624,6 +671,29 @@ def filtered_multiselect(label: str, df: pd.DataFrame, col: str):
     return st.multiselect(label, options=options, default=[], placeholder="Todos")
 
 
+
+def get_col_by_date(pl_col_dates: Dict[str, pd.Timestamp], selected_date: pd.Timestamp) -> str:
+    selected_date = pd.Timestamp(selected_date)
+    for col, dt in pl_col_dates.items():
+        if pd.Timestamp(dt) == selected_date:
+            return col
+    raise KeyError(f"Data não encontrada nas colunas de PL: {selected_date}")
+
+
+def month_display(dt: pd.Timestamp) -> str:
+    return pd.Timestamp(dt).strftime("%d/%m/%Y")
+
+
+def calc_delta_from_mensal(mensal: pd.DataFrame, end_dt: pd.Timestamp, start_dt: pd.Timestamp) -> Tuple[float, float, float, float]:
+    if mensal.empty:
+        return 0.0, 0.0, 0.0, 0.0
+    lookup = mensal.set_index("Data")["PL"]
+    end_value = float(lookup.get(pd.Timestamp(end_dt), 0.0))
+    start_value = float(lookup.get(pd.Timestamp(start_dt), 0.0))
+    delta = end_value - start_value
+    pct = delta / start_value if start_value else 0.0
+    return start_value, end_value, delta, pct
+
 def format_table_money(df: pd.DataFrame, money_cols: List[str]) -> pd.DataFrame:
     out = df.copy()
     for col in money_cols:
@@ -635,24 +705,18 @@ def format_table_money(df: pd.DataFrame, money_cols: List[str]) -> pd.DataFrame:
 # SIDEBAR
 # ==============================
 
-st.sidebar.markdown("# M Wealth")
-st.sidebar.markdown("Dashboard macro do escritório")
-
 base_file = get_base_file()
 
-with st.sidebar.expander("Atualização da base", expanded=False):
-    st.caption("No GitHub, substitua o arquivo na pasta data. O upload abaixo é útil para teste local ou atualização manual no ambiente atual.")
-    uploaded = st.file_uploader("Enviar nova planilha", type=["xlsx"])
-    if uploaded is not None:
-        DATA_DIR.mkdir(exist_ok=True)
-        with open(DEFAULT_FILE, "wb") as f:
-            f.write(uploaded.getbuffer())
-        st.cache_data.clear()
-        st.success("Base atualizada. Recarregue a página se necessário.")
+if LOGO_FILE.exists():
+    st.sidebar.image(str(LOGO_FILE), use_container_width=True)
+else:
+    st.sidebar.markdown("# M Wealth")
 
-    if st.button("Limpar cache e recarregar cotações", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+st.sidebar.markdown("Dashboard macro do escritório")
+
+if st.sidebar.button("Atualizar dados / limpar cache", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
 
 if not base_file.exists():
     st.error("Arquivo base não encontrado. Inclua a planilha em data/Controle de Clientes MWealth 2026.xlsx ou envie pelo upload lateral.")
@@ -707,19 +771,55 @@ if pagina == "Dashboard Macro":
     qtd_grupos = int(grupos_validos["Grupo Familiar"].nunique())
     pl_medio_grupo = grupos_validos["PL Atual"].sum() / qtd_grupos if qtd_grupos else 0
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        kpi_card("PL total sob gestão", br_money(current_pl), f"Data-base: {latest_date.strftime('%d/%m/%Y')}")
-    with col2:
-        kpi_card("Meta patrimonial", br_money(META_PL_EMPRESA), f"Realizado: {br_percent(pct_meta)}")
-    with col3:
-        kpi_card("Desvio para a meta", br_money(gap_meta), f"Meses restantes: {meses_restantes} | Semanas: {semanas_restantes}")
-    with col4:
-        kpi_card("Grupos familiares", br_number(qtd_grupos), f"PL médio por grupo: {br_money(pl_medio_grupo)}")
-
     mensal = long_df.groupby("Data", as_index=False)["PL"].sum().sort_values("Data")
     mensal["Meta Linear"] = make_line_meta(mensal["Data"].tolist(), mensal["PL"].iloc[0], META_PL_EMPRESA).values
     mensal["Percentual da Meta"] = mensal["PL"] / META_PL_EMPRESA
+
+    meta_linear_atual = float(mensal.loc[mensal["Data"].eq(pd.Timestamp(latest_date)), "Meta Linear"].iloc[0]) if not mensal.empty else 0.0
+    gap_meta_linear = meta_linear_atual - current_pl
+    status_linear = "abaixo" if gap_meta_linear > 0 else "acima"
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        kpi_card("PL total sob gestão", br_money(current_pl), f"Data-base: {latest_date.strftime('%d/%m/%Y')}")
+    with col2:
+        kpi_card("Meta patrimonial final", br_money(META_PL_EMPRESA), f"Realizado: {br_percent(pct_meta)}")
+    with col3:
+        kpi_card("Desvio para meta final", br_money(gap_meta), f"Meses restantes: {meses_restantes} | Semanas: {semanas_restantes}")
+    with col4:
+        kpi_card("Desvio para meta linear", br_money(abs(gap_meta_linear)), f"Meta atual: {br_money(meta_linear_atual)} | {status_linear}")
+    with col5:
+        kpi_card("Grupos familiares", br_number(qtd_grupos), f"PL médio por grupo: {br_money(pl_medio_grupo)}")
+
+    datas_mensais = mensal["Data"].tolist()
+    latest_idx = datas_mensais.index(pd.Timestamp(latest_date)) if pd.Timestamp(latest_date) in datas_mensais else len(datas_mensais) - 1
+    prev_idx = max(latest_idx - 1, 0)
+    start_prev, end_latest, delta_latest, pct_delta_latest = calc_delta_from_mensal(mensal, datas_mensais[latest_idx], datas_mensais[prev_idx])
+
+    hoje_ts = pd.Timestamp(date.today())
+    meses_fechados = mensal[mensal["Data"] < hoje_ts.replace(day=1)]
+    if len(meses_fechados) >= 2:
+        closed_end = meses_fechados["Data"].iloc[-1]
+        closed_start = meses_fechados["Data"].iloc[-2]
+    elif len(mensal) >= 2:
+        closed_end = mensal["Data"].iloc[-1]
+        closed_start = mensal["Data"].iloc[-2]
+    else:
+        closed_end = mensal["Data"].iloc[-1]
+        closed_start = mensal["Data"].iloc[-1]
+    _, _, delta_closed, pct_delta_closed = calc_delta_from_mensal(mensal, closed_end, closed_start)
+
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    v1, v2, v3, v4 = st.columns(4)
+    with v1:
+        kpi_card("Variação período atual", br_money(delta_latest), f"{month_display(datas_mensais[prev_idx])} até {month_display(datas_mensais[latest_idx])} | {br_percent(pct_delta_latest)}")
+    with v2:
+        kpi_card("Variação último mês fechado", br_money(delta_closed), f"{month_display(closed_start)} até {month_display(closed_end)} | {br_percent(pct_delta_closed)}")
+    with v3:
+        kpi_card("PL mês anterior", br_money(start_prev), f"Referência: {month_display(datas_mensais[prev_idx])}")
+    with v4:
+        kpi_card("Meta linear atual", br_money(meta_linear_atual), f"Executado: {br_percent(current_pl / meta_linear_atual if meta_linear_atual else 0)}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Evolução do PL vs. Meta Patrimonial")
@@ -761,7 +861,7 @@ if pagina == "Dashboard Macro":
         st.subheader("Proporção por Canal")
         if "Canal" in raw_df.columns:
             canal = raw_df.groupby("Canal", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False)
-            donut_chart(canal, "Canal", "PL Atual", "Wealth, Tesouraria e Demais Canais", height=370)
+            value_bar_chart(canal, "Canal", "PL Atual", "Participação de PL por Canal", height=330, money=True)
         else:
             st.info("Coluna Canal não encontrada na base.")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -781,7 +881,10 @@ if pagina == "Dashboard Macro":
         ]
         cliente_pl["Faixa"] = pd.cut(cliente_pl["PL Atual"], bins=bins, labels=labels)
         faixa = cliente_pl.groupby("Faixa", observed=False).agg(Clientes=("Cliente", "count"), PL=("PL Atual", "sum")).reset_index()
-        donut_chart(faixa, "Faixa", "Clientes", "Quantidade de Clientes por Faixa", height=370)
+        value_bar_chart(faixa, "Faixa", "Clientes", "Quantidade de Clientes por Faixa", height=330, money=False)
+        faixa_display = faixa.copy()
+        faixa_display["PL"] = faixa_display["PL"].apply(br_money)
+        st.dataframe(faixa_display, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     c5, c6 = st.columns(2)
@@ -789,14 +892,14 @@ if pagina == "Dashboard Macro":
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Top 10 Clientes")
         top_clientes = raw_df.groupby("Cliente", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
-        bar_chart(top_clientes.sort_values("PL Atual"), "Cliente", "PL Atual", "Maiores Clientes por PL", horizontal=True, height=450)
+        bar_chart(top_clientes, "Cliente", "PL Atual", "Maiores Clientes por PL", horizontal=True, height=450)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with c6:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("Top 10 Grupos Familiares")
         top_grupos = raw_df.groupby("Grupo Familiar", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(10)
-        bar_chart(top_grupos.sort_values("PL Atual"), "Grupo Familiar", "PL Atual", "Maiores Grupos por PL", horizontal=True, height=450)
+        bar_chart(top_grupos, "Grupo Familiar", "PL Atual", "Maiores Grupos por PL", horizontal=True, height=450)
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================
@@ -805,7 +908,27 @@ if pagina == "Dashboard Macro":
 
 elif pagina == "Análise Detalhada":
     st.subheader("Análise Detalhada da Base")
-    st.caption("Use os filtros para validar PL por consultor, cliente, grupo familiar, canal, corretora e perfil.")
+    st.caption("Use os filtros e o período para validar PL, variação patrimonial e evolução por consultor, cliente ou grupo familiar.")
+
+    datas_disponiveis = list(pl_col_dates.values())
+    labels_datas = {month_display(dt): pd.Timestamp(dt) for dt in datas_disponiveis}
+    label_lista = list(labels_datas.keys())
+    idx_jan_26 = next((i for i, dt in enumerate(datas_disponiveis) if pd.Timestamp(dt).year == 2026 and pd.Timestamp(dt).month == 1), 0)
+
+    p1, p2 = st.columns(2)
+    with p1:
+        data_inicio_label = st.selectbox("Mês inicial da análise", label_lista, index=idx_jan_26)
+    with p2:
+        data_fim_label = st.selectbox("Mês final da análise", label_lista, index=len(label_lista) - 1)
+
+    data_inicio = labels_datas[data_inicio_label]
+    data_fim = labels_datas[data_fim_label]
+    if data_inicio > data_fim:
+        st.warning("O mês inicial está depois do mês final. Inverti o período para calcular corretamente.")
+        data_inicio, data_fim = data_fim, data_inicio
+
+    col_pl_inicio = get_col_by_date(pl_col_dates, data_inicio)
+    col_pl_fim = get_col_by_date(pl_col_dates, data_fim)
 
     f1, f2, f3 = st.columns(3)
     f4, f5, f6 = st.columns(3)
@@ -832,24 +955,35 @@ elif pagina == "Análise Detalhada":
         "PF/ PJ": tipo_pessoa,
     }
 
-    base_filtrada = apply_filters(raw_df, filtros)
+    base_filtrada = apply_filters(raw_df, filtros).copy()
+    base_filtrada["PL Inicial Período"] = base_filtrada[col_pl_inicio].fillna(0)
+    base_filtrada["PL Final Período"] = base_filtrada[col_pl_fim].fillna(0)
+    base_filtrada["Variação PL"] = base_filtrada["PL Final Período"] - base_filtrada["PL Inicial Período"]
+    base_filtrada["Variação %"] = np.where(base_filtrada["PL Inicial Período"] != 0, base_filtrada["Variação PL"] / base_filtrada["PL Inicial Período"], 0)
+
     contas_filtradas = base_filtrada["Conta"].nunique() if "Conta" in base_filtrada.columns else len(base_filtrada)
     clientes_filtrados = base_filtrada["Cliente"].nunique() if "Cliente" in base_filtrada.columns else len(base_filtrada)
     grupos_filtrados = base_filtrada["Grupo Familiar"].nunique() if "Grupo Familiar" in base_filtrada.columns else 0
-    pl_filtrado = base_filtrada["PL Atual"].sum()
+    pl_inicial_filtrado = base_filtrada["PL Inicial Período"].sum()
+    pl_final_filtrado = base_filtrada["PL Final Período"].sum()
+    delta_filtrado = pl_final_filtrado - pl_inicial_filtrado
+    pct_delta_filtrado = delta_filtrado / pl_inicial_filtrado if pl_inicial_filtrado else 0
 
-    k1, k2, k3, k4 = st.columns(4)
+    k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
-        kpi_card("PL filtrado", br_money(pl_filtrado), f"{br_percent(pl_filtrado / META_PL_EMPRESA)} da meta total")
+        kpi_card("PL inicial", br_money(pl_inicial_filtrado), f"Referência: {month_display(data_inicio)}")
     with k2:
-        kpi_card("Contas", br_number(contas_filtradas), "Quantidade de contas na seleção")
+        kpi_card("PL final", br_money(pl_final_filtrado), f"Referência: {month_display(data_fim)}")
     with k3:
-        kpi_card("Clientes", br_number(clientes_filtrados), "Clientes únicos na seleção")
+        kpi_card("Variação patrimonial", br_money(delta_filtrado), f"{br_percent(pct_delta_filtrado)} no período")
     with k4:
+        kpi_card("Clientes", br_number(clientes_filtrados), f"Contas: {br_number(contas_filtradas)}")
+    with k5:
         kpi_card("Grupos familiares", br_number(grupos_filtrados), "Grupos únicos na seleção")
 
     row_ids = base_filtrada["_row_id"].tolist() if not base_filtrada.empty else []
     long_filtrado = long_df[long_df["_row_id"].isin(row_ids)] if row_ids else long_df.iloc[0:0]
+    long_filtrado = long_filtrado[(long_filtrado["Data"] >= data_inicio) & (long_filtrado["Data"] <= data_fim)]
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Evolução Histórica da Seleção")
@@ -869,26 +1003,36 @@ elif pagina == "Análise Detalhada":
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("PL por Consultor")
         if "Consultor" in base_filtrada.columns:
-            por_consultor = base_filtrada.groupby("Consultor", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(20)
-            bar_chart(por_consultor.sort_values("PL Atual"), "Consultor", "PL Atual", "Ranking de Consultores", horizontal=True, height=500)
+            por_consultor = base_filtrada.groupby("Consultor", as_index=False).agg({"PL Final Período": "sum", "Variação PL": "sum"}).reset_index().sort_values("PL Final Período", ascending=False).head(20)
+            bar_chart(por_consultor.rename(columns={"PL Final Período": "PL"}), "Consultor", "PL", "Ranking de Consultores por PL Final", horizontal=True, height=500)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with c2:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("PL por Grupo Familiar")
-        por_grupo = base_filtrada.groupby("Grupo Familiar", as_index=False)["PL Atual"].sum().sort_values("PL Atual", ascending=False).head(20)
-        bar_chart(por_grupo.sort_values("PL Atual"), "Grupo Familiar", "PL Atual", "Ranking de Grupos", horizontal=True, height=500)
+        por_grupo = base_filtrada.groupby("Grupo Familiar", as_index=False).agg({"PL Final Período": "sum", "Variação PL": "sum"}).reset_index().sort_values("PL Final Período", ascending=False).head(20)
+        bar_chart(por_grupo.rename(columns={"PL Final Período": "PL"}), "Grupo Familiar", "PL", "Ranking de Grupos por PL Final", horizontal=True, height=500)
         st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    st.subheader("Maiores Variações Patrimoniais no Período")
+    if "Consultor" in base_filtrada.columns and not base_filtrada.empty:
+        variacao_consultor = base_filtrada.groupby("Consultor", as_index=False)["Variação PL"].sum().sort_values("Variação PL", ascending=False).head(15)
+        bar_chart(variacao_consultor.rename(columns={"Variação PL": "Variação"}), "Consultor", "Variação", "Variação por Consultor", horizontal=True, height=420)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("Tabela Analítica")
     cols_show = [
         "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
-        "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "Região", "PL Atual",
+        "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "Região",
+        "PL Inicial Período", "PL Final Período", "Variação PL", "Variação %",
     ]
     cols_show = [c for c in cols_show if c in base_filtrada.columns]
-    tabela = base_filtrada[cols_show].sort_values("PL Atual", ascending=False).copy()
-    tabela_display = format_table_money(tabela, ["PL Atual"])
+    tabela = base_filtrada[cols_show].sort_values("PL Final Período", ascending=False).copy()
+    tabela_display = format_table_money(tabela, ["PL Inicial Período", "PL Final Período", "Variação PL"])
+    if "Variação %" in tabela_display.columns:
+        tabela_display["Variação %"] = tabela["Variação %"].apply(br_percent)
     st.dataframe(tabela_display, use_container_width=True, hide_index=True)
     csv = tabela.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("Baixar tabela filtrada em CSV", csv, "base_filtrada_mwealth.csv", "text/csv")

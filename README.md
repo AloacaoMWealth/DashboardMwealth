@@ -1,15 +1,15 @@
 # Dashboard Macro M Wealth
 
-Aplicativo Streamlit para acompanhamento macro do escritório usando a planilha `data/Controle de Clientes MWealth 2026.xlsx`.
+Dashboard institucional em Streamlit para acompanhamento de PL, meta patrimonial, corretoras, canais, segmentação e análise detalhada por período.
 
-## Rodar localmente
+## Como rodar localmente
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Atualizar a base
+## Atualização da base
 
 Substitua o arquivo abaixo no GitHub:
 
@@ -17,9 +17,12 @@ Substitua o arquivo abaixo no GitHub:
 data/Controle de Clientes MWealth 2026.xlsx
 ```
 
-## Observações
+O app usa a aba `Controle Contas` e identifica as colunas de PL no padrão `PL dd/mm/aaaa`.
 
-- Contas offshore, incluindo Charles Schwab/Charles Shwab, são convertidas de USD para BRL.
-- A cotação USDBRL tem prioridade quando preenchida na planilha, na aba de análise com linha `Dólar Price`.
-- Se a cotação não estiver preenchida, o app tenta buscar via `yfinance` usando o fechamento da data/mês do PL.
-- A última coluna de PL usada como `PL Atual` é a última coluna com valor preenchido, evitando zerar o dashboard quando o mês D0 ainda está vazio.
+## Conversão offshore
+
+Contas classificadas como Offshore são convertidas de USD para BRL usando o fechamento USDBRL via yfinance para cada data de referência de PL. O app tenta `USDBRL=X` e `BRL=X`.
+
+## Tema
+
+O projeto inclui `.streamlit/config.toml` para forçar tema claro e evitar distorções visuais nos filtros e gráficos.
