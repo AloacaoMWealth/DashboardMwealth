@@ -1105,20 +1105,48 @@ elif pagina == "Análise Detalhada":
         variacao_consultor = base_filtrada.groupby("Consultor", as_index=False)["Variação PL"].sum().sort_values("Variação PL", ascending=False).head(15)
         bar_chart(variacao_consultor.rename(columns={"Variação PL": "Variação"}), "Consultor", "Variação", "Variação por Consultor", horizontal=True, height=420)
 
-    st.subheader("Tabela Analítica")
+    with st.expander("Tabela Analítica", expanded=False):
     cols_show = [
         "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
         "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "Região",
         "PL Inicial Período", "PL Final Período", "Variação PL", "Variação %",
     ]
+
     cols_show = [c for c in cols_show if c in base_filtrada.columns]
-    tabela = base_filtrada[cols_show].sort_values("PL Final Período", ascending=False).copy()
-    tabela_display = format_table_money(tabela, ["PL Inicial Período", "PL Final Período", "Variação PL"])
+
+    tabela = base_filtrada[cols_show].sort_values(
+        "PL Final Período",
+        ascending=False
+    ).copy()
+
+    tabela_display = format_table_money(
+        tabela,
+        ["PL Inicial Período", "PL Final Período", "Variação PL"]
+    )
+
     if "Variação %" in tabela_display.columns:
         tabela_display["Variação %"] = tabela["Variação %"].apply(br_percent)
-    st.dataframe(tabela_display, use_container_width=True, hide_index=True)
-    csv = tabela.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
-    st.download_button("Baixar tabela filtrada em CSV", csv, "base_filtrada_mwealth.csv", "text/csv")
+
+    st.dataframe(
+        tabela_display,
+        use_container_width=True,
+        hide_index=True,
+        height=520
+    )
+
+    csv = tabela.to_csv(
+        index=False,
+        sep=";",
+        decimal=",",
+        encoding="utf-8-sig"
+    ).encode("utf-8-sig")
+
+    st.download_button(
+        "Baixar tabela filtrada em CSV",
+        csv,
+        "base_filtrada_mwealth.csv",
+        "text/csv"
+    )
 
 # ==============================
 # BASE DE DADOS
