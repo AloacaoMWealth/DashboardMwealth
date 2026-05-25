@@ -1105,7 +1105,7 @@ elif pagina == "Análise Detalhada":
         variacao_consultor = base_filtrada.groupby("Consultor", as_index=False)["Variação PL"].sum().sort_values("Variação PL", ascending=False).head(15)
         bar_chart(variacao_consultor.rename(columns={"Variação PL": "Variação"}), "Consultor", "Variação", "Variação por Consultor", horizontal=True, height=420)
 
-    with st.expander("Tabela Analítica", expanded=False):
+    st.expander("Tabela Analítica", expanded=False):
     cols_show = [
         "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
         "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "Região",
