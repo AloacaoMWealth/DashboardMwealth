@@ -435,7 +435,7 @@ def standard_layout(fig: go.Figure, height: int = 360, legend: bool = True) -> g
         paper_bgcolor="white",
         font=dict(color=CINZA_TEXTO, size=12),
         title_font=dict(color=CINZA_TEXTO, size=16),
-        title=None,
+        title=dict(text=""),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -448,6 +448,7 @@ def standard_layout(fig: go.Figure, height: int = 360, legend: bool = True) -> g
     )
     fig.update_xaxes(showgrid=False, linecolor="#D1D5DB", tickfont=dict(color=CINZA_TEXTO))
     fig.update_yaxes(gridcolor="#E5E7EB", linecolor="#D1D5DB", tickfont=dict(color=CINZA_TEXTO))
+    fig.update_layout(title_text="")
     return fig
 
 
