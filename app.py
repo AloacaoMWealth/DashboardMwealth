@@ -457,11 +457,12 @@ def bar_chart(df: pd.DataFrame, x: str, y: str, title: str, horizontal: bool = F
         st.info("Sem dados para exibir neste gráfico.")
         return
     plot_df = df.copy()
+    plot_df["_texto_valor"] = plot_df[y].apply(br_money)
     if horizontal:
-        fig = px.bar(plot_df, x=y, y=x, orientation="h", title=title, text=y)
+        fig = px.bar(plot_df, x=y, y=x, orientation="h", title=None, text="_texto_valor")
         fig.update_traces(
             marker_color=AZUL_MEDIO,
-            texttemplate="R$ %{x:,.0f}",
+            texttemplate="%{text}",
             textposition="auto",
             cliponaxis=False,
             hovertemplate="%{y}<br>PL: R$ %{x:,.2f}<extra></extra>",
@@ -469,10 +470,10 @@ def bar_chart(df: pd.DataFrame, x: str, y: str, title: str, horizontal: bool = F
         fig.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=24, r=110, t=50, b=30))
         fig.update_xaxes(tickprefix="R$ ", tickformat=",.0f")
     else:
-        fig = px.bar(plot_df, x=x, y=y, title=title, text=y)
+        fig = px.bar(plot_df, x=x, y=y, title=None, text="_texto_valor")
         fig.update_traces(
             marker_color=AZUL_MEDIO,
-            texttemplate="R$ %{y:,.0f}",
+            texttemplate="%{text}",
             textposition="outside",
             cliponaxis=False,
             hovertemplate="%{x}<br>PL: R$ %{y:,.2f}<extra></extra>",
