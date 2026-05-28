@@ -413,6 +413,8 @@ def variation_card(label: str, value: float, pct: float, sub: str = ""):
         unsafe_allow_html=True,
     )
 
+def separator():
+    st.markdown('<div class="kpi-separator"></div>', unsafe_allow_html=True)
 
 def standard_layout(fig: go.Figure, height: int = 360, legend: bool = True) -> go.Figure:
     fig.update_layout(
@@ -905,6 +907,8 @@ if pagina == "Dashboard Macro":
             br_number(qtd_grupos),
             f"PL médio por grupo: {br_money(pl_medio_grupo)}"
         )
+
+    separator()
 
     st.subheader("Evolução do PL vs. Meta Patrimonial")
     fig = go.Figure()
