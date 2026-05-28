@@ -181,8 +181,29 @@ st.markdown(
             margin-left: 6px;
             vertical-align: 2px;
         }}
-        div[data-testid="stVerticalBlock"] {{
-            gap: 0.75rem;
+                div[data-testid="stVerticalBlock"] {{
+            gap: 0.95rem;
+        }}
+
+        div[data-testid="column"] {{
+            padding-left: 0.35rem;
+            padding-right: 0.35rem;
+        }}
+
+        .kpi-separator {{
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(
+                90deg,
+                rgba(0, 51, 72, 0.00),
+                rgba(0, 51, 72, 0.18),
+                rgba(0, 51, 72, 0.00)
+            );
+            margin: 14px 0 16px 0;
+        }}
+
+        .kpi-row-spacer {{
+            height: 4px;
         }}
 
         /* Inputs e multiselects legíveis no tema claro */
@@ -402,6 +423,9 @@ def variation_card(label: str, value: float, pct: float, sub: str = ""):
         unsafe_allow_html=True,
     )
 
+def separator():
+    st.markdown('<div class="kpi-separator"></div>', unsafe_allow_html=True)
+
 
 def standard_layout(fig: go.Figure, height: int = 360, legend: bool = True) -> go.Figure:
     fig.update_layout(
@@ -411,6 +435,7 @@ def standard_layout(fig: go.Figure, height: int = 360, legend: bool = True) -> g
         paper_bgcolor="white",
         font=dict(color=CINZA_TEXTO, size=12),
         title_font=dict(color=CINZA_TEXTO, size=16),
+        title=dict(text=""),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -423,6 +448,7 @@ def standard_layout(fig: go.Figure, height: int = 360, legend: bool = True) -> g
     )
     fig.update_xaxes(showgrid=False, linecolor="#D1D5DB", tickfont=dict(color=CINZA_TEXTO))
     fig.update_yaxes(gridcolor="#E5E7EB", linecolor="#D1D5DB", tickfont=dict(color=CINZA_TEXTO))
+    fig.update_layout(title_text="")
     return fig
 
 
@@ -431,11 +457,12 @@ def bar_chart(df: pd.DataFrame, x: str, y: str, title: str, horizontal: bool = F
         st.info("Sem dados para exibir neste gráfico.")
         return
     plot_df = df.copy()
+    plot_df["_texto_valor"] = plot_df[y].apply(br_money)
     if horizontal:
-        fig = px.bar(plot_df, x=y, y=x, orientation="h", title=title, text=y)
+        fig = px.bar(plot_df, x=y, y=x, orientation="h", title=None, text="_texto_valor")
         fig.update_traces(
             marker_color=AZUL_MEDIO,
-            texttemplate="R$ %{x:,.0f}",
+            texttemplate="%{text}",
             textposition="auto",
             cliponaxis=False,
             hovertemplate="%{y}<br>PL: R$ %{x:,.2f}<extra></extra>",
@@ -443,10 +470,10 @@ def bar_chart(df: pd.DataFrame, x: str, y: str, title: str, horizontal: bool = F
         fig.update_layout(yaxis=dict(autorange="reversed"), margin=dict(l=24, r=110, t=50, b=30))
         fig.update_xaxes(tickprefix="R$ ", tickformat=",.0f")
     else:
-        fig = px.bar(plot_df, x=x, y=y, title=title, text=y)
+        fig = px.bar(plot_df, x=x, y=y, title=None, text="_texto_valor")
         fig.update_traces(
             marker_color=AZUL_MEDIO,
-            texttemplate="R$ %{y:,.0f}",
+            texttemplate="%{text}",
             textposition="outside",
             cliponaxis=False,
             hovertemplate="%{x}<br>PL: R$ %{y:,.2f}<extra></extra>",
@@ -809,17 +836,40 @@ if pagina == "Dashboard Macro":
     gap_meta_linear = meta_linear_atual - current_pl
     status_linear = "abaixo" if gap_meta_linear > 0 else "acima"
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+        # Primeira linha: PL e metas
+    col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
     with col1:
-        kpi_card("PL total sob gestão", br_money(current_pl), f"Data-base: {latest_date.strftime('%d/%m/%Y')}")
+        kpi_card(
+            "PL total sob gestão",
+            br_money(current_pl),
+            f"Data-base: {latest_date.strftime('%d/%m/%Y')}"
+        )
     with col2:
-        kpi_card("Meta patrimonial final", br_money(META_PL_EMPRESA), f"Realizado: {br_percent(pct_meta)}")
+        kpi_card(
+            "Meta patrimonial final",
+            br_money(META_PL_EMPRESA),
+            f"Realizado: {br_percent(pct_meta)}"
+        )
     with col3:
-        kpi_card("Desvio para meta final", br_money(gap_meta), f"Meses restantes: {meses_restantes} | Semanas: {semanas_restantes}")
+        kpi_card(
+            "Desvio para meta final",
+            br_money(gap_meta),
+            f"Meses restantes: {meses_restantes} | Semanas: {semanas_restantes}"
+        )
     with col4:
-        kpi_card("Desvio para meta linear", br_money(abs(gap_meta_linear)), f"Meta atual: {br_money(meta_linear_atual)} | {status_linear}")
+        kpi_card(
+            "Meta linear atual",
+            br_money(meta_linear_atual),
+            f"Executado: {br_percent(current_pl / meta_linear_atual if meta_linear_atual else 0)}"
+        )
     with col5:
-        kpi_card("Grupos familiares", br_number(qtd_grupos), f"PL médio por grupo: {br_money(pl_medio_grupo)}")
+        kpi_card(
+            "Desvio para meta linear",
+            br_money(abs(gap_meta_linear)),
+            f"{status_linear} da meta linear"
+        )
+
+    separator()
 
     datas_mensais = mensal["Data"].tolist()
     latest_idx = datas_mensais.index(pd.Timestamp(latest_date)) if pd.Timestamp(latest_date) in datas_mensais else len(datas_mensais) - 1
@@ -839,15 +889,36 @@ if pagina == "Dashboard Macro":
         closed_start = mensal["Data"].iloc[-1]
     _, _, delta_closed, pct_delta_closed = calc_delta_from_mensal(mensal, closed_end, closed_start)
 
-    v1, v2, v3, v4 = st.columns(4)
+        # Segunda linha: variações e base de grupos
+    v1, v2, v3, v4 = st.columns(4, gap="medium")
     with v1:
-        variation_card("Variação período atual", delta_latest, pct_delta_latest, f"{month_display(datas_mensais[prev_idx])} até {month_display(datas_mensais[latest_idx])}")
+        variation_card(
+            "Variação período atual",
+            delta_latest,
+            pct_delta_latest,
+            f"{month_display(datas_mensais[prev_idx])} até {month_display(datas_mensais[latest_idx])}"
+        )
     with v2:
-        variation_card("Variação último mês fechado", delta_closed, pct_delta_closed, f"{month_display(closed_start)} até {month_display(closed_end)}")
+        variation_card(
+            "Variação último mês fechado",
+            delta_closed,
+            pct_delta_closed,
+            f"{month_display(closed_start)} até {month_display(closed_end)}"
+        )
     with v3:
-        kpi_card("PL mês anterior", br_money(start_prev), f"Referência: {month_display(datas_mensais[prev_idx])}")
+        kpi_card(
+            "PL mês anterior",
+            br_money(start_prev),
+            f"Referência: {month_display(datas_mensais[prev_idx])}"
+        )
     with v4:
-        kpi_card("Meta linear atual", br_money(meta_linear_atual), f"Executado: {br_percent(current_pl / meta_linear_atual if meta_linear_atual else 0)}")
+        kpi_card(
+            "Grupos familiares",
+            br_number(qtd_grupos),
+            f"PL médio por grupo: {br_money(pl_medio_grupo)}"
+        )
+
+    separator()
 
     st.subheader("Evolução do PL vs. Meta Patrimonial")
     fig = go.Figure()
@@ -1035,20 +1106,48 @@ elif pagina == "Análise Detalhada":
         variacao_consultor = base_filtrada.groupby("Consultor", as_index=False)["Variação PL"].sum().sort_values("Variação PL", ascending=False).head(15)
         bar_chart(variacao_consultor.rename(columns={"Variação PL": "Variação"}), "Consultor", "Variação", "Variação por Consultor", horizontal=True, height=420)
 
-    st.subheader("Tabela Analítica")
-    cols_show = [
-        "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
-        "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "Região",
-        "PL Inicial Período", "PL Final Período", "Variação PL", "Variação %",
-    ]
-    cols_show = [c for c in cols_show if c in base_filtrada.columns]
-    tabela = base_filtrada[cols_show].sort_values("PL Final Período", ascending=False).copy()
-    tabela_display = format_table_money(tabela, ["PL Inicial Período", "PL Final Período", "Variação PL"])
-    if "Variação %" in tabela_display.columns:
-        tabela_display["Variação %"] = tabela["Variação %"].apply(br_percent)
-    st.dataframe(tabela_display, use_container_width=True, hide_index=True)
-    csv = tabela.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
-    st.download_button("Baixar tabela filtrada em CSV", csv, "base_filtrada_mwealth.csv", "text/csv")
+    with st.expander("Tabela Analítica", expanded=False):
+        cols_show = [
+            "Corretora", "Grupo Geral", "Grupo Familiar", "Cliente", "PF/ PJ", "Canal",
+            "Conta", "UF", "Consultor", "Perfil Carteira/ Renda", "Perfil de Investidor", "Região",
+            "PL Inicial Período", "PL Final Período", "Variação PL", "Variação %",
+        ]
+    
+        cols_show = [c for c in cols_show if c in base_filtrada.columns]
+    
+        tabela = base_filtrada[cols_show].sort_values(
+            "PL Final Período",
+            ascending=False
+        ).copy()
+    
+        tabela_display = format_table_money(
+            tabela,
+            ["PL Inicial Período", "PL Final Período", "Variação PL"]
+        )
+    
+        if "Variação %" in tabela_display.columns:
+            tabela_display["Variação %"] = tabela["Variação %"].apply(br_percent)
+    
+        st.dataframe(
+            tabela_display,
+            use_container_width=True,
+            hide_index=True,
+            height=520
+        )
+    
+        csv = tabela.to_csv(
+            index=False,
+            sep=";",
+            decimal=",",
+            encoding="utf-8-sig"
+        ).encode("utf-8-sig")
+    
+        st.download_button(
+            "Baixar tabela filtrada em CSV",
+            csv,
+            "base_filtrada_mwealth.csv",
+            "text/csv"
+        )
 
 # ==============================
 # BASE DE DADOS
