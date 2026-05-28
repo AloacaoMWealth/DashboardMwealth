@@ -141,6 +141,17 @@ st.markdown(
             color: #6B7280 !important;
             margin-top: 8px;
         }}
+        .kpi-separator {{
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(
+                90deg,
+                rgba(0, 51, 72, 0.00),
+                rgba(0, 51, 72, 0.18),
+                rgba(0, 51, 72, 0.00)
+            );
+            margin: 14px 0 16px 0;
+        }}
         .section-card {{
             background: white;
             border: 1px solid {CINZA_BORDA};
@@ -835,6 +846,8 @@ if pagina == "Dashboard Macro":
     with col5:
         kpi_card("Desvio para meta linear", br_money(abs(gap_meta_linear)), f"{status_linear} da meta linear")
 
+    separator()
+
     datas_mensais = mensal["Data"].tolist()
     latest_idx = datas_mensais.index(pd.Timestamp(latest_date)) if pd.Timestamp(latest_date) in datas_mensais else len(datas_mensais) - 1
     prev_idx = max(latest_idx - 1, 0)
@@ -908,6 +921,8 @@ if pagina == "Dashboard Macro":
     fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
     fig = standard_layout(fig, height=420, legend=True)
     st.plotly_chart(fig, use_container_width=True)
+
+    separator()
 
     c1, c2 = st.columns([1.25, 1])
 
