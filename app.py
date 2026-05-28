@@ -728,6 +728,16 @@ def calc_delta_from_mensal(mensal: pd.DataFrame, end_dt: pd.Timestamp, start_dt:
     pct = delta / start_value if start_value else 0.0
     return start_value, end_value, delta, pct
 
+def calc_meses_restantes_meta(data_base: pd.Timestamp, data_meta: date) -> int:
+    """
+    Calcula quantos meses ainda restam para atingir a meta final.
+    Usa a data-base do PL atual como referência.
+    """
+    data_base = pd.Timestamp(data_base).date()
+
+    meses = (data_meta.year - data_base.year) * 12 + (data_meta.month - data_base.month)
+    return max(meses, 1)
+
 def format_table_money(df: pd.DataFrame, money_cols: List[str]) -> pd.DataFrame:
     out = df.copy()
     for col in money_cols:
@@ -792,9 +802,13 @@ if pagina == "Dashboard Macro":
     current_pl = raw_df["PL Atual"].sum()
     pct_meta = current_pl / META_PL_EMPRESA if META_PL_EMPRESA else 0
     gap_meta = META_PL_EMPRESA - current_pl
+
     today = date.today()
     meses_restantes = max((DATA_META.year - today.year) * 12 + (DATA_META.month - today.month), 0)
     semanas_restantes = max((DATA_META - today).days // 7, 0)
+
+    meses_restantes_meta = calc_meses_restantes_meta(latest_date, DATA_META)
+    meta_captacao_mensal_futura = gap_meta / meses_restantes_meta if meses_restantes_meta else 0
 
     grupos = raw_df.groupby("Grupo Familiar", dropna=False)["PL Atual"].sum().reset_index()
     grupos_validos = grupos[grupos["Grupo Familiar"] != "Não informado"]
@@ -839,15 +853,45 @@ if pagina == "Dashboard Macro":
         closed_start = mensal["Data"].iloc[-1]
     _, _, delta_closed, pct_delta_closed = calc_delta_from_mensal(mensal, closed_end, closed_start)
 
-    v1, v2, v3, v4 = st.columns(4)
+        # Segunda linha: variações, PL anterior, captação necessária e grupos
+    v1, v2, v3, v4, v5 = st.columns(5, gap="medium")
+
     with v1:
-        variation_card("Variação período atual", delta_latest, pct_delta_latest, f"{month_display(datas_mensais[prev_idx])} até {month_display(datas_mensais[latest_idx])}")
+        variation_card(
+            "Variação período atual",
+            delta_latest,
+            pct_delta_latest,
+            f"{month_display(datas_mensais[prev_idx])} até {month_display(datas_mensais[latest_idx])}"
+        )
+
     with v2:
-        variation_card("Variação último mês fechado", delta_closed, pct_delta_closed, f"{month_display(closed_start)} até {month_display(closed_end)}")
+        variation_card(
+            "Variação último mês fechado",
+            delta_closed,
+            pct_delta_closed,
+            f"{month_display(closed_start)} até {month_display(closed_end)}"
+        )
+
     with v3:
-        kpi_card("PL mês anterior", br_money(start_prev), f"Referência: {month_display(datas_mensais[prev_idx])}")
+        kpi_card(
+            "PL mês anterior",
+            br_money(start_prev),
+            f"Referência: {month_display(datas_mensais[prev_idx])}"
+        )
+
     with v4:
-        kpi_card("Meta linear atual", br_money(meta_linear_atual), f"Executado: {br_percent(current_pl / meta_linear_atual if meta_linear_atual else 0)}")
+        kpi_card(
+            "Captação mensal necessária",
+            br_money(meta_captacao_mensal_futura),
+            f"Para atingir a meta em {meses_restantes_meta} meses"
+        )
+
+    with v5:
+        kpi_card(
+            "Grupos familiares",
+            br_number(qtd_grupos),
+            f"PL médio por grupo: {br_money(pl_medio_grupo)}"
+        )
 
     st.subheader("Evolução do PL vs. Meta Patrimonial")
     fig = go.Figure()
@@ -896,7 +940,18 @@ if pagina == "Dashboard Macro":
     
     with c4:
         st.subheader("Segmentação da Base por Faixa de PL")
-        cliente_pl = raw_df.groupby("Cliente", as_index=False)["PL Atual"].sum()
+
+        grupo_pl = (
+            raw_df
+            .groupby("Grupo Familiar", as_index=False)
+            .agg(
+                PL=("PL Atual", "sum"),
+                Clientes=("Cliente", "nunique")
+            )
+        )
+
+        grupo_pl = grupo_pl[grupo_pl["Grupo Familiar"] != "Não informado"].copy()
+
         bins = [-0.01, 5_000_000, 10_000_000, 15_000_000, 30_000_000, 100_000_000, np.inf]
         labels = [
             "Até R$ 5 MM",
@@ -906,12 +961,37 @@ if pagina == "Dashboard Macro":
             "R$ 30 MM a R$ 100 MM",
             "Acima de R$ 100 MM",
         ]
-        cliente_pl["Faixa"] = pd.cut(cliente_pl["PL Atual"], bins=bins, labels=labels)
-        faixa = cliente_pl.groupby("Faixa", observed=False).agg(Clientes=("Cliente", "count"), PL=("PL Atual", "sum")).reset_index()
-        value_bar_chart(faixa, "Faixa", "Clientes", "Quantidade de Clientes por Faixa", height=285, money=False)
+
+        grupo_pl["Faixa"] = pd.cut(grupo_pl["PL"], bins=bins, labels=labels)
+
+        faixa = (
+            grupo_pl
+            .groupby("Faixa", observed=False)
+            .agg(
+                Grupos=("Grupo Familiar", "nunique"),
+                Clientes=("Clientes", "sum"),
+                PL=("PL", "sum")
+            )
+            .reset_index()
+        )
+
+        value_bar_chart(
+            faixa,
+            "Faixa",
+            "Grupos",
+            "Quantidade de Grupos Familiares por Faixa",
+            height=285,
+            money=False
+        )
+
         faixa_display = faixa.copy()
         faixa_display["PL"] = faixa_display["PL"].apply(br_money)
-        st.dataframe(faixa_display, use_container_width=True, hide_index=True)
+
+        st.dataframe(
+            faixa_display,
+            use_container_width=True,
+            hide_index=True
+        )
     
     c5, c6 = st.columns(2)
     with c5:
