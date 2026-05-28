@@ -831,9 +831,9 @@ if pagina == "Dashboard Macro":
     with col3:
         kpi_card("Desvio para meta final", br_money(gap_meta), f"Meses restantes: {meses_restantes} | Semanas: {semanas_restantes}")
     with col4:
-        kpi_card("Desvio para meta linear", br_money(abs(gap_meta_linear)), f"Meta atual: {br_money(meta_linear_atual)} | {status_linear}")
+        kpi_card("Meta linear atual", br_money(meta_linear_atual), f"Executado: {br_percent(current_pl / meta_linear_atual if meta_linear_atual else 0)}")
     with col5:
-        kpi_card("Grupos familiares", br_number(qtd_grupos), f"PL médio por grupo: {br_money(pl_medio_grupo)}")
+        kpi_card("Desvio para meta linear", br_money(abs(gap_meta_linear)), f"{status_linear} da meta linear")
 
     datas_mensais = mensal["Data"].tolist()
     latest_idx = datas_mensais.index(pd.Timestamp(latest_date)) if pd.Timestamp(latest_date) in datas_mensais else len(datas_mensais) - 1
