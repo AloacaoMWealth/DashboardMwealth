@@ -500,6 +500,101 @@ def value_bar_chart(df: pd.DataFrame, category: str, value: str, title: str, hei
     fig = standard_layout(fig, height=height, legend=False)
     st.plotly_chart(fig, use_container_width=True)
 
+
+def historical_bar_chart(
+    df: pd.DataFrame,
+    category: str,
+    title: str,
+    top_n: int | None = None,
+    percent: bool = False,
+    height: int = 420,
+):
+    """Gráfico histórico de barras empilhadas por mês."""
+    if df.empty:
+        st.info("Sem dados para exibir neste gráfico.")
+        return
+
+    if category not in df.columns:
+        st.info(f"Coluna {category} não encontrada na base.")
+        return
+
+    d = df[["Data", category, "PL"]].copy()
+    d[category] = d[category].apply(normalize_text)
+    d = d[d["PL"].fillna(0) != 0]
+
+    if d.empty:
+        st.info("Sem PL histórico para exibir neste gráfico.")
+        return
+
+    if top_n is not None:
+        top_categories = (
+            d.groupby(category)["PL"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(top_n)
+            .index
+        )
+        d[category] = np.where(d[category].isin(top_categories), d[category], "Outras")
+
+    grouped = (
+        d.groupby(["Data", category], as_index=False)["PL"]
+        .sum()
+        .sort_values("Data")
+    )
+    grouped["Mês"] = grouped["Data"].dt.strftime("%m/%Y")
+
+    category_order = {
+        "Mês": grouped.drop_duplicates("Data").sort_values("Data")["Mês"].tolist()
+    }
+
+    if percent:
+        total_mes = grouped.groupby("Data")["PL"].transform("sum")
+        grouped["Participação"] = np.where(total_mes != 0, grouped["PL"] / total_mes, 0)
+
+        fig = px.bar(
+            grouped,
+            x="Mês",
+            y="Participação",
+            color=category,
+            category_orders=category_order,
+            title=None,
+        )
+        fig.update_yaxes(tickformat=".0%")
+        fig.update_traces(
+            hovertemplate=(
+                "Mês: %{x}<br>"
+                f"{category}: %{{legendgroup}}<br>"
+                "Participação: %{y:.2%}<extra></extra>"
+            )
+        )
+    else:
+        fig = px.bar(
+            grouped,
+            x="Mês",
+            y="PL",
+            color=category,
+            category_orders=category_order,
+            title=None,
+        )
+        fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
+        fig.update_traces(
+            hovertemplate=(
+                "Mês: %{x}<br>"
+                f"{category}: %{{legendgroup}}<br>"
+                "PL: R$ %{y:,.2f}<extra></extra>"
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        xaxis_title="Mês",
+        yaxis_title="Participação" if percent else "PL",
+        legend_title_text=category,
+        margin=dict(l=24, r=24, t=30, b=60),
+    )
+    fig = standard_layout(fig, height=height, legend=True)
+    st.plotly_chart(fig, use_container_width=True)
+
 def donut_chart(df: pd.DataFrame, names: str, values: str, title: str, height: int = 340):
     if df.empty or df[values].sum() == 0:
         st.info("Sem dados para exibir neste gráfico.")
@@ -785,7 +880,7 @@ latest_date = pl_col_dates[latest_col]
 
 pagina = st.sidebar.radio(
     "Navegação",
-    ["Dashboard Macro", "Análise Detalhada", "Base de Dados"],
+    ["Dashboard Macro", "Análise Dinâmica", "Histórico de Informações", "Base de Dados"],
     index=0,
 )
 
@@ -1027,8 +1122,8 @@ if pagina == "Dashboard Macro":
 # ANÁLISE DETALHADA
 # ==============================
 
-elif pagina == "Análise Detalhada":
-    st.subheader("Análise Detalhada da Base")
+elif pagina == "Análise Dinâmica":
+    st.subheader("Análise Dinâmica da Base")
     st.caption("Use os filtros e o período para validar PL, variação patrimonial e evolução por consultor, cliente ou grupo familiar.")
 
     datas_disponiveis = list(pl_col_dates.values())
@@ -1148,6 +1243,109 @@ elif pagina == "Análise Detalhada":
     st.dataframe(tabela_display, use_container_width=True, hide_index=True)
     csv = tabela.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("Baixar tabela filtrada em CSV", csv, "base_filtrada_mwealth.csv", "text/csv")
+
+
+# ==============================
+# HISTÓRICO DE INFORMAÇÕES
+# ==============================
+
+elif pagina == "Histórico de Informações":
+    st.subheader("Histórico de Informações")
+    st.caption(
+        "Evolução mês a mês da distribuição de PL por corretora, região "
+        "(Onshore vs. Offshore) e canal."
+    )
+
+    datas_disponiveis = sorted(long_df["Data"].dropna().unique())
+    labels_datas = {month_display(dt): pd.Timestamp(dt) for dt in datas_disponiveis}
+    label_lista = list(labels_datas.keys())
+
+    p1, p2, p3 = st.columns([1, 1, 1])
+    with p1:
+        data_inicio_label = st.selectbox(
+            "Mês inicial",
+            label_lista,
+            index=0,
+            key="hist_data_inicio"
+        )
+    with p2:
+        data_fim_label = st.selectbox(
+            "Mês final",
+            label_lista,
+            index=len(label_lista) - 1,
+            key="hist_data_fim"
+        )
+    with p3:
+        tipo_visualizacao = st.radio(
+            "Visualização",
+            ["PL financeiro", "Participação percentual"],
+            horizontal=False,
+            key="hist_tipo_visualizacao"
+        )
+
+    data_inicio = labels_datas[data_inicio_label]
+    data_fim = labels_datas[data_fim_label]
+
+    if data_inicio > data_fim:
+        data_inicio, data_fim = data_fim, data_inicio
+        st.info("O mês inicial estava depois do mês final. O período foi ajustado automaticamente.")
+
+    historico_df = long_df[
+        (long_df["Data"] >= data_inicio) &
+        (long_df["Data"] <= data_fim)
+    ].copy()
+
+    usar_percentual = tipo_visualizacao == "Participação percentual"
+
+    if historico_df.empty:
+        st.info("Não há dados históricos para o período selecionado.")
+    else:
+        st.subheader("Histórico por Corretora")
+        historical_bar_chart(
+            historico_df,
+            category="Corretora",
+            title="Distribuição Histórica por Corretora",
+            top_n=12,
+            percent=usar_percentual,
+            height=460,
+        )
+
+        st.subheader("Histórico Onshore vs. Offshore")
+        historical_bar_chart(
+            historico_df,
+            category="Região",
+            title="Distribuição Histórica Onshore vs. Offshore",
+            top_n=None,
+            percent=usar_percentual,
+            height=420,
+        )
+
+        st.subheader("Histórico por Canal")
+        historical_bar_chart(
+            historico_df,
+            category="Canal",
+            title="Distribuição Histórica por Canal",
+            top_n=None,
+            percent=usar_percentual,
+            height=420,
+        )
+
+        with st.expander("Tabela histórica consolidada", expanded=False):
+            resumo_historico = (
+                historico_df
+                .groupby(["Data", "Corretora", "Região", "Canal"], as_index=False)["PL"]
+                .sum()
+                .sort_values(["Data", "PL"], ascending=[True, False])
+            )
+            resumo_historico["Data"] = resumo_historico["Data"].apply(month_display)
+            resumo_historico["PL"] = resumo_historico["PL"].apply(br_money)
+            st.dataframe(
+                resumo_historico,
+                use_container_width=True,
+                hide_index=True,
+                height=520,
+            )
+
 
 # ==============================
 # BASE DE DADOS
