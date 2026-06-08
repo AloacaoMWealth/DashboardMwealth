@@ -580,6 +580,8 @@ def historical_bar_chart(
             color=category,
             category_orders=category_order,
             title=None,
+            color_discrete_map=MAPA_CORES_FIXAS,
+            color_discrete_sequence=PALETA_INSTITUCIONAL,
         )
         fig.update_yaxes(tickformat=".0%")
         fig.update_traces(
@@ -597,6 +599,8 @@ def historical_bar_chart(
             color=category,
             category_orders=category_order,
             title=None,
+            color_discrete_map=MAPA_CORES_FIXAS,
+            color_discrete_sequence=PALETA_INSTITUCIONAL,
         )
         fig.update_yaxes(tickprefix="R$ ", tickformat=",.0f")
         fig.update_traces(
@@ -1345,8 +1349,6 @@ elif pagina == "Histórico de Informações":
             top_n=12,
             percent=usar_percentual,
             height=460,
-            color_discrete_map=MAPA_CORES_FIXAS,
-            color_discrete_sequence=PALETA_INSTITUCIONAL,
         )
 
         st.subheader("Histórico Onshore vs. Offshore")
@@ -1357,8 +1359,6 @@ elif pagina == "Histórico de Informações":
             top_n=None,
             percent=usar_percentual,
             height=420,
-            color_discrete_map=MAPA_CORES_FIXAS,
-            color_discrete_sequence=PALETA_INSTITUCIONAL,
         )
 
         st.subheader("Histórico por Canal")
@@ -1369,8 +1369,6 @@ elif pagina == "Histórico de Informações":
             top_n=None,
             percent=usar_percentual,
             height=420,
-            color_discrete_map=MAPA_CORES_FIXAS,
-            color_discrete_sequence=PALETA_INSTITUCIONAL,
         )
 
         with st.expander("Tabela histórica consolidada", expanded=False):
