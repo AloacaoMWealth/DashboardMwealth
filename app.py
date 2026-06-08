@@ -34,10 +34,32 @@ CINZA_FUNDO = "#F4F7FA"
 CINZA_BORDA = "#D9E2EC"
 CINZA_TEXTO = "#111827"
 
+PALETA_INSTITUCIONAL = [
+    "#003348",  # azul escuro
+    "#0B5C7A",  # azul médio
+    "#2A9FD6",  # azul claro
+    "#6B8796",  # azul acinzentado
+    "#D99C3A",  # dourado institucional
+    "#8FA7B3",  # cinza azulado
+    "#4B5563",  # cinza escuro
+    "#A7C7D9",  # azul suave
+    "#B8A06A",  # dourado discreto
+    "#CBD5E1",  # cinza claro
+]
+
+MAPA_CORES_FIXAS = {
+    "Onshore": "#003348",
+    "Offshore": "#2A9FD6",
+    "Wealth": "#0B5C7A",
+    "Tesouraria": "#6B8796",
+    "Não informado": "#CBD5E1",
+    "Outros": "#8FA7B3",
+}
+
 CORRETORAS_OFFSHORE = {
     "AVENUE",
     "CHARLES SCHWAB",
-    "CHARLES SHWAB",  # grafia alternativa encontrada em bases operacionais
+    "CHARLES SHWAB",
     "SCHWAB",
     "XP US",
     "XP INTERNACIONAL",
@@ -599,11 +621,26 @@ def donut_chart(df: pd.DataFrame, names: str, values: str, title: str, height: i
     if df.empty or df[values].sum() == 0:
         st.info("Sem dados para exibir neste gráfico.")
         return
-    fig = px.pie(df, names=names, values=values, hole=0.56, title=title)
-    fig.update_traces(textposition="inside", textinfo="percent+label")
+
+    fig = px.pie(
+        df,
+        names=names,
+        values=values,
+        hole=0.56,
+        title=None,
+        color=names,
+        color_discrete_map=MAPA_CORES_FIXAS,
+        color_discrete_sequence=PALETA_INSTITUCIONAL,
+    )
+
+    fig.update_traces(
+        textposition="inside",
+        textinfo="percent+label",
+        marker=dict(line=dict(color="white", width=2)),
+    )
+
     fig = standard_layout(fig, height=height, legend=True)
     st.plotly_chart(fig, use_container_width=True)
-
 
 def _extract_close_series(data: pd.DataFrame) -> pd.Series:
     """Extrai uma série de fechamento mesmo quando o yfinance devolve MultiIndex."""
